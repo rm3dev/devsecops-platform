@@ -1,0 +1,56 @@
+# =============================================================================
+# TEMPLATED — applied by kyverno/install-kyverno.sh (envsubst ${PLATFORM_DOMAIN}).
+#
+# D-26: workloads deploy immutable artifacts. Every container image must be a
+# DIGEST reference into the platform registry (registry.<domain>/<team>/<svc>
+# @sha256:…). This rejects mutable tags (:latest, :main-abc123) AND any
+# foreign registry — the Kustomize overlays' `images:` transformer is the only
+# thing that sets digests, and CI (updateGitOps/promoteDigest) is the only
+# writer. Note: vendor/system images in excluded namespaces are unaffected.
+# =============================================================================
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-digest-pinning
+  annotations:
+    policies.kyverno.io/title: Images must be digest-pinned platform references
+    policies.kyverno.io/description: >-
+      Container images in workload pods must reference
+      registry.${PLATFORM_DOMAIN} by immutable digest (name@sha256:...).
+      Mutable tags and external registries are rejected at admission.
+spec:
+  background: true
+  failurePolicy: Fail
+  rules:
+    - name: images-digest-pinned-platform-registry
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kube-system
+                - kube-public
+                - kube-node-lease
+                - kyverno
+                - argocd
+                - external-secrets
+                - platform-tools
+                - argo-rollouts
+      validate:
+        failureAction: Enforce
+        message: >-
+          containers[*].image must be a digest-pinned reference to
+          registry.${PLATFORM_DOMAIN} (e.g.
+          registry.${PLATFORM_DOMAIN}/<team>/<svc>@sha256:...). Mutable tags and
+          foreign registries are rejected — digests are set exclusively by CI
+          in the gitops-repository overlays (D-26).
+        pattern:
+          spec:
+            containers:
+              - image: "registry.${PLATFORM_DOMAIN}/*@sha256:*"
+            =(initContainers):
+              - image: "registry.${PLATFORM_DOMAIN}/*@sha256:*"

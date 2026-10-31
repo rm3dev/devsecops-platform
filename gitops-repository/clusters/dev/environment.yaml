@@ -1,0 +1,69 @@
+# =============================================================================
+# DEV environment — AppProject + ApplicationSet (synced by the platform-root
+# app-of-apps). TEMPLATED FILE: ${PLATFORM_DOMAIN} is substituted by
+# gitlab/scripts/50-gitops-repository.sh at push time — do not hardcode.
+#
+# Onboarding a new service: create applications/<svc>/{values.yaml,base,
+# overlays/dev} — the git directory generator picks it up automatically.
+# =============================================================================
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: dev
+  namespace: argocd
+  labels:
+    environment: dev
+spec:
+  description: Development environment (auto-synced)
+  sourceRepos:
+    - https://gitlab.${PLATFORM_DOMAIN}/platform/gitops-repository.git
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: "*-dev"
+  # Applications may NOT create cluster-scoped resources.
+  clusterResourceWhitelist: []
+  orphanedResources:
+    warn: true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: dev-apps
+  namespace: argocd
+  labels:
+    environment: dev
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - git:
+        repoURL: https://gitlab.${PLATFORM_DOMAIN}/platform/gitops-repository.git
+        revision: main
+        directories:
+          - path: applications/*/overlays/dev
+  template:
+    metadata:
+      name: '{{ index .path.segments 1 }}-dev'
+      labels:
+        environment: dev
+      finalizers:
+        - resources-finalizer.argocd.argoproj.io
+    spec:
+      project: dev
+      source:
+        repoURL: https://gitlab.${PLATFORM_DOMAIN}/platform/gitops-repository.git
+        targetRevision: main
+        path: '{{ .path.path }}'
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: '{{ index .path.segments 1 }}-dev'
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
+          - ApplyOutOfSyncOnly=true
+        retry:
+          limit: 5
+          backoff: { duration: 10s, factor: 2, maxDuration: 3m }

@@ -1,0 +1,69 @@
+# =============================================================================
+# LOCAL DEVELOPMENT OVERRIDE — applied automatically by `docker compose`
+# (merge order: docker-compose.yml + docker-compose.override.yml).
+#
+# Purpose: fast local iteration WITHOUT the Traefik/TLS chain — services are
+# reachable directly on 127.0.0.1-bound host ports for developer tooling
+# (API clients, IDEs, curl). Production uses docker-compose.prod.yml instead:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# All direct ports bind to 127.0.0.1 only — nothing is exposed to the LAN.
+# =============================================================================
+
+services:
+  jenkins:
+    ports:
+      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:50000:50000"
+    environment:
+      JAVA_OPTS: >-
+        -Djava.awt.headless=true
+        -Xmx${JENKINS_JAVA_XMX}
+        -Dhudson.model.DirectoryBrowserSupport.CSP="sandbox allow-scripts"
+        -Djenkins.install.runSetupWizard=false
+        -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005
+    # Jenkins JCasC reload-friendly logging while developing pipelines
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "2"
+
+  sonarqube:
+    ports:
+      - "127.0.0.1:9000:9000"
+
+  nexus:
+    ports:
+      - "127.0.0.1:8081:8081"
+      # Docker connectors are created in Phase 5; ports pre-wired for local pulls
+      - "127.0.0.1:8083:8083"
+      - "127.0.0.1:8085:8085"
+
+  vault:
+    ports:
+      - "127.0.0.1:8200:8200"
+
+  grafana:
+    ports:
+      - "127.0.0.1:3000:3000"
+
+  prometheus:
+    ports:
+      - "127.0.0.1:9090:9090"
+
+  alertmanager:
+    ports:
+      - "127.0.0.1:9093:9093"
+
+  loki:
+    ports:
+      - "127.0.0.1:3100:3100"
+
+  traefik:
+    # Dashboard for local debugging (insecure API) — dev only
+    ports:
+      - "127.0.0.1:8082:8082"
+    command:
+      - --api.insecure=true
+      - --log.level=DEBUG

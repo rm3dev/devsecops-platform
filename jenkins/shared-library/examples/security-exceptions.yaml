@@ -1,0 +1,15 @@
+# =============================================================================
+# Service-level security exception register (master spec §10).
+# Validated fail-closed by SecurityPolicy.validateExceptions on EVERY run:
+# missing owner/justification/approvedBy/expires ⇒ build fails.
+# Expired exceptions are ignored and logged — findings gate again.
+# =============================================================================
+exceptions:
+  - id: CVE-2025-00000
+    tool: container                   # secrets | sast | dependencies | container
+    owner: jane.doe@example.com
+    justification: >
+      Affected code path is unreachable in this service (feature-flagged off);
+      upstream fix tracked in PROJ-4711, vendor patch expected next release.
+    approvedBy: security-guild        # Security Engineer role per RBAC §17
+    expires: "2026-12-31"             # ISO-8601 date — mandatory

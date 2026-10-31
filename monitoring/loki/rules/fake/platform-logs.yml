@@ -1,0 +1,47 @@
+# =============================================================================
+# Loki ruler log-alerts (Phase 10, D-35) — tenant dir "fake" (auth_enabled: false).
+# These complement the metric alerts: they catch failure modes that only exist
+# in log text (stack traces, sealed-vault messages, OOM kills) across EVERY
+# container of the compose project, with zero per-service instrumentation.
+# Routed like Prometheus alerts: severity label → Alertmanager routes.
+# Threshold rationale: healthy platform containers log a trickle of "error"
+# lines (handled exceptions, retries); sustained high rates mean real trouble.
+# =============================================================================
+groups:
+  - name: platform-log-alerts
+    interval: 1m
+    rules:
+      - alert: ContainerErrorLogSpike
+        expr: |
+          sum by (service) (
+            rate({project=~".+"} |~ `(?i)\b(error|fatal|panic)\b`[5m])
+          ) > 2
+        for: 10m
+        labels:
+          severity: warning
+          source: loki
+        annotations:
+          summary: "Service '{{ $labels.service }}' logs >2 error/fatal/panic lines per second for 10m"
+          description: "Explore: {service=\"{{ $labels.service }}\"} |~ `(?i)error|fatal|panic` (Grafana → DevSecOps → Platform Logs)."
+
+      - alert: VaultSealEventInLogs
+        # Belt-and-braces to the vault_core_unsealed metric: catches seal
+        # events even if the metrics path itself is degraded.
+        expr: |
+          sum(rate({service="vault"} |~ `(?i)vault is sealed|seal configuration`[5m])) > 0
+        for: 1m
+        labels:
+          severity: critical
+          source: loki
+        annotations:
+          summary: "Vault logged a SEAL event — verify vault_core_unsealed and unseal if needed"
+
+      - alert: JenkinsOutOfMemory
+        expr: |
+          sum(rate({service="jenkins"} |~ `java\.lang\.OutOfMemoryError|GC overhead limit`[15m])) > 0
+        for: 0m
+        labels:
+          severity: critical
+          source: loki
+        annotations:
+          summary: "Jenkins controller logged OutOfMemoryError — raise JENKINS_JAVA_XMX and check for runaway pipelines"

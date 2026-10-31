@@ -1,0 +1,81 @@
+# =============================================================================
+# orders-api — application values (helm-charts/microservice-standard).
+# Environment differences (namespace/replicas/digest/patches) live in
+# overlays/<env>/kustomization.yaml — NOT here.
+# =============================================================================
+
+image:
+  repository: registry.devsecops.internal/orders/orders-api
+
+replicaCount: 2          # base default; overlays pin per environment
+
+ports:
+  - name: http
+    containerPort: 8080
+    protocol: TCP
+
+service:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+
+probes:
+  liveness:
+    httpGet: { path: /healthz, port: http }
+    initialDelaySeconds: 20
+    periodSeconds: 10
+    timeoutSeconds: 3
+    failureThreshold: 3
+  readiness:
+    httpGet: { path: /readyz, port: http }
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    timeoutSeconds: 3
+    failureThreshold: 3
+  startup:
+    httpGet: { path: /healthz, port: http }
+    periodSeconds: 5
+    failureThreshold: 30
+
+resources:
+  requests: { cpu: 100m, memory: 256Mi }
+  limits:   { cpu: "1",  memory: 512Mi }
+
+config:
+  LOG_LEVEL: info
+  HTTP_PORT: "8080"
+
+# Progressive delivery (Phase 9): orders-api ships as an Argo Rollouts canary.
+# Base steps are dev-friendly (fast); uat/prod overlays patch longer pauses.
+rollout:
+  enabled: true
+  strategy: canary
+  canary:
+    steps:
+      - setWeight: 50
+      - pause: { duration: 10s }
+      - setWeight: 100
+
+# Vault KV v2: secret/data/apps/orders-api/db-creds → {username, password}
+secrets:
+  - name: db-creds
+    refreshInterval: 1h
+    keys: [username, password]
+
+hpa:
+  enabled: false
+
+pdb:
+  enabled: true
+  minAvailable: 1
+
+networkPolicy:
+  enabled: true
+  allowAllEgress: true
+
+metrics:
+  enabled: true
+  path: /metrics
+  port: http

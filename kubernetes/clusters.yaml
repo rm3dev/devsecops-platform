@@ -1,0 +1,23 @@
+# =============================================================================
+# Cluster registry (multi-cluster support — master spec §12).
+#
+# The in-cluster destination (https://kubernetes.default.svc) used by the
+# seeded AppProjects/ApplicationSets is the cluster ArgoCD runs on. Register
+# ADDITIONAL clusters with:
+#   ./scripts/10-register-cluster.sh <name> <kubectl-context>
+# then give that cluster's environments their own clusters/<env>-<name>/
+# directory in the gitops-repository (copy of clusters/<env>/ with the
+# destination server replaced by the registered cluster's server URL and the
+# AppProject name suffixed: e.g. project 'prod-eu2').
+# =============================================================================
+clusters:
+  - name: lab-k3s                    # K8S_CLUSTER_NAME in .env
+    role: primary                    # ArgoCD runs here (kubernetes.default.svc)
+    apiServer: https://kubernetes.default.svc
+    environments: [dev, qa, uat, prod]
+    option: B                        # B = K3s lab on the platform host, A = existing
+  # - name: eu-prod
+  #   role: spoke
+  #   apiServer: https://k8s-api.eu.example.com:6443
+  #   environments: [prod]
+  #   option: A

@@ -1,0 +1,153 @@
+# =============================================================================
+# PRODUCTION OVERRIDE — use explicitly:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml \
+#     --profile core --profile monitoring --profile build --profile backup up -d
+#
+# Tightenings over the base file:
+#   * restart: always
+#   * larger log rotation (audit-friendly)
+#   * read-only root filesystems where the image supports it
+#   * production resource profile (raise limits per architecture.md §7.1)
+#   * no setup wizard / no debug surfaces
+# =============================================================================
+
+x-prod-logging: &prod-logging
+  driver: json-file
+  options:
+    max-size: "100m"
+    max-file: "5"
+
+services:
+  traefik:
+    restart: always
+    read_only: true
+    tmpfs:
+      - /tmp
+    logging: *prod-logging
+
+  gitlab:
+    restart: always
+    logging: *prod-logging
+    deploy:
+      resources:
+        limits:
+          cpus: "8"
+          memory: 16g
+
+  jenkins:
+    restart: always
+    logging: *prod-logging
+    environment:
+      JAVA_OPTS: >-
+        -Djava.awt.headless=true
+        -Xmx4g
+        -Dhudson.model.DirectoryBrowserSupport.CSP="sandbox allow-scripts"
+        -Djenkins.install.runSetupWizard=false
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
+          memory: 8g
+
+  sonarqube-db:
+    restart: always
+    logging: *prod-logging
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 4g
+
+  sonarqube:
+    restart: always
+    logging: *prod-logging
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
+          memory: 10g
+
+  nexus:
+    restart: always
+    logging: *prod-logging
+    environment:
+      INSTALL4J_ADD_VM_PARAMS: >-
+        -Xms2g -Xmx8g -XX:MaxDirectMemorySize=3g
+        -Djava.util.prefs.userRoot=/nexus-data/javaprefs
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
+          memory: 12g
+
+  vault:
+    restart: always
+    logging: *prod-logging
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 1g
+
+  prometheus:
+    restart: always
+    read_only: true
+    logging: *prod-logging
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 6g
+
+  alertmanager:
+    restart: always
+    read_only: true
+    logging: *prod-logging
+
+  grafana:
+    restart: always
+    logging: *prod-logging
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 1g
+
+  loki:
+    restart: always
+    logging: *prod-logging
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 2g
+
+  alloy:
+    restart: always
+    logging: *prod-logging
+
+  node-exporter:
+    restart: always
+    read_only: true
+    logging: *prod-logging
+
+  cadvisor:
+    restart: always
+    logging: *prod-logging
+
+  buildkitd:
+    restart: always
+    logging: *prod-logging
+    deploy:
+      resources:
+        limits:
+          cpus: "8"
+          memory: 16g
+
+  docker-socket-proxy:
+    restart: always
+    logging: *prod-logging
+
+  backup:
+    restart: always
+    logging: *prod-logging

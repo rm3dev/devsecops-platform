@@ -1,0 +1,177 @@
+# =============================================================================
+# microservice-standard — default values.
+# Per-application overrides live in applications/<svc>/values.yaml;
+# per-ENVIRONMENT overrides live in applications/<svc>/overlays/<env>/
+# (Kustomize: namespace, replicas, digest pin, patches) — never here.
+# =============================================================================
+
+image:
+  # Full repository path WITHOUT tag: registry.<domain>/<team>/<service>.
+  # Required — the chart renders "<repository>:managed-by-gitops" and the
+  # environment overlay pins the immutable digest (kustomize images:).
+  repository: ""
+
+replicaCount: 2
+revisionHistoryLimit: 5
+terminationGracePeriodSeconds: 30
+
+strategy:
+  type: RollingUpdate
+  rollingUpdate:
+    maxSurge: 1
+    maxUnavailable: 0
+
+# --- progressive delivery (Argo Rollouts — Phase 9, D-30) ---------------------
+# enabled: renders a Rollout INSTEAD of the Deployment (identical pod template).
+# strategy steps are app-level defaults; environment overlays PATCH
+# spec.strategy.canary.steps (the merge replaces the whole steps list).
+# Overlay notes (verified against kustomize v5.8.3): rollout-enabled apps ship
+# a per-overlay `replicas-config.yaml` included via `configurations:` (teaches
+# the replicas transformer the Rollout kind — built-ins cover only Deployment/
+# StatefulSet/ReplicaSet/RC), and pod-template LIST edits (containers) must be
+# JSON6902 ops — CRDs get JSON-merge semantics, where a strategic-style
+# containers patch would replace the whole list. See orders-api overlays.
+rollout:
+  enabled: false
+  strategy: canary            # canary | blueGreen
+  canary:
+    maxSurge: null
+    maxUnavailable: null
+    # Raw argo-rollouts steps — analysis entries may be embedded here.
+    # Keep pauses BOUNDED: verifyDeployment waits for phase=Healthy and fails
+    # on indefinite pauses unless platform-config verify.acceptPaused is set.
+    steps:
+      - setWeight: 25
+      - pause: { duration: 30s }
+      - setWeight: 50
+      - pause: { duration: 30s }
+      - setWeight: 100
+  blueGreen:
+    previewServiceEnabled: true
+    autoPromotionEnabled: true
+    scaleDownDelaySeconds: 60
+    extra: {}                 # passthrough (e.g. prePromotionAnalysis)
+
+serviceAccount:
+  create: true
+  # name defaults to the release name
+  name: ""
+  annotations: {}
+
+service:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+
+# Container ports (names must match service.ports[].targetPort)
+ports:
+  - name: http
+    containerPort: 8080
+    protocol: TCP
+
+probes:
+  liveness:
+    httpGet: { path: /healthz, port: http }
+    initialDelaySeconds: 20
+    periodSeconds: 10
+    timeoutSeconds: 3
+    failureThreshold: 3
+  readiness:
+    httpGet: { path: /readyz, port: http }
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    timeoutSeconds: 3
+    failureThreshold: 3
+  startup:
+    httpGet: { path: /healthz, port: http }
+    periodSeconds: 5
+    failureThreshold: 30
+
+# Enforced by policy: requests AND limits are required (Kyverno
+# require-digest-pinning companion policies / review in MR).
+resources:
+  requests: { cpu: 100m, memory: 256Mi }
+  limits:   { cpu: "1",  memory: 512Mi }
+
+# --- pod/container hardening (defaults are the platform floor) ---------------
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+  fsGroup: 10001
+  seccompProfile: { type: RuntimeDefault }
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities: { drop: ["ALL"] }
+
+# Writable tmpfs-style mount (readOnlyRootFilesystem friendly)
+emptyDirMounts:
+  - { name: tmp, mountPath: /tmp }
+
+# --- configuration -----------------------------------------------------------
+# Rendered into ConfigMap <release>-config; mounted as envFrom by default.
+config: {}
+  # LOG_LEVEL: info
+
+# Extra literal env entries: [{name: FOO, value: bar}] or valueFrom refs
+env: []
+
+# Additional envFrom sources (besides the generated configmap):
+# [{secretRef: {name: my-secret}}, {configMapRef: {name: other}}]
+envFrom: []
+
+# --- secrets via External Secrets Operator (Vault is the source of truth) ----
+# Vault KV v2 path convention: secret/data/<vaultAppPath>/<name> with one
+# property per key. NO secret values ever live in this repository.
+vaultAppPath: ""   # defaults to apps/<release-name>
+secretStore:
+  name: vault-cluster-store
+  kind: ClusterSecretStore
+secrets: []
+  # - name: db-creds
+  #   refreshInterval: 1h
+  #   keys: [username, password]
+
+# --- autoscaling / disruption -------------------------------------------------
+hpa:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 6
+  cpuUtilization: 80
+  memoryUtilization: null
+
+pdb:
+  enabled: true
+  minAvailable: 1
+
+# --- ingress (lab clusters expose via port-forward/NodePort; prod sets this) --
+ingress:
+  enabled: false
+  className: ""
+  host: ""            # e.g. orders-api.apps.<domain>
+  path: /
+  pathType: Prefix
+  tlsSecret: ""
+
+# --- network policy (default-deny + explicit allows) --------------------------
+networkPolicy:
+  enabled: true
+  # Namespaces allowed to connect IN (besides own namespace + monitoring):
+  extraIngressNamespaces: []   # e.g. [istio-system]
+  # Allow egress: DNS + own namespace + everything (lab default true).
+  # Set false in hardened environments and list egress targets explicitly.
+  allowAllEgress: true
+
+# --- observability hints (Phase 10 wires service monitors) --------------------
+metrics:
+  enabled: false
+  path: /metrics
+  port: http
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

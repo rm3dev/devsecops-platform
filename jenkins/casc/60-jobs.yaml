@@ -1,0 +1,122 @@
+# =============================================================================
+# JCasC — seed items (Phase 3 folders, Phase 6 team organization folders)
+# Job DSL (sandbox disabled for these trusted scripts, see 10-security.yaml).
+# Idempotent: re-applied on every controller start / configuration reload.
+#
+# NOTE: literal block scalars (|) below MUST NOT contain "${...}" sequences —
+# JCasC interpolates environment variables inside YAML scalars BEFORE the DSL
+# runs; the scripts use string concatenation instead.
+# =============================================================================
+jobs:
+  - script: >
+      folder('platform') {
+          displayName('Platform Engineering')
+          description('Seed jobs, shared-library validation and platform maintenance jobs. Managed as code (jenkins/casc/60-jobs.yaml) — do not edit in the UI.')
+      }
+
+      folder('teams') {
+          displayName('Application Teams')
+          description('One sub-folder per team, containing multibranch pipelines discovered from GitLab groups (wired in Phase 6).')
+      }
+
+  # ---------------------------------------------------------------------------
+  # Phase 6 (D-22): one GitLab Organization Folder per team group. Each folder
+  # auto-discovers every project under teams/<team> in GitLab that contains a
+  # Jenkinsfile and creates a multibranch pipeline for it (branches strategy 3
+  # = all branches, origin MRs, tags). New repositories need NO Jenkins change:
+  #   1. create the project under teams/<team> in GitLab
+  #   2. add the standard Jenkinsfile (shared-library examples/Jenkinsfile)
+  #   3. platform admin runs gitlab/scripts/add-webhook.sh <path> <job-name>
+  #      for instant triggers (the hourly scan below is the safety net)
+  # Onboarding a NEW TEAM: create the GitLab group, add its name to TEAMS here,
+  # then reload JCasC (Manage Jenkins → Reload Configuration as Code).
+  # ---------------------------------------------------------------------------
+  - script: |
+      def TEAMS = ['payments', 'orders']    // EXAMPLE team slugs — replace with your real teams
+
+      for (String team : TEAMS) {
+          String groupPath = 'teams/' + team
+          organizationFolder(groupPath) {
+              displayName(team + ' (GitLab group)')
+              description('Auto-discovered multibranch pipelines for GitLab group ' + groupPath + '. Managed as code (jenkins/casc/60-jobs.yaml) — do not edit in the UI.')
+
+              organizations {
+                  gitLabSCMNavigator {
+                      serverName('gitlab')
+                      projectOwner(groupPath)
+                      credentialsId('gitlab-branch-source-token')
+                      checkoutCredentialsId('gitlab-jenkins-user')
+                      traits {
+                          subGroupProjectDiscoveryTrait()
+                          gitLabBranchDiscovery {
+                              strategyId(3)          // 1=default branch, 2=named, 3=all branches
+                          }
+                          originMergeRequestDiscoveryTrait {
+                              strategyId(1)          // discover origin MRs (merged with target)
+                          }
+                          gitLabTagDiscovery()       // v* tags are protected in GitLab (Phase 4)
+                      }
+                  }
+              }
+
+              projectFactories {
+                  workflowMultiBranchProjectFactory {
+                      scriptPath('Jenkinsfile')
+                  }
+              }
+
+              orphanedItemStrategy {
+                  discardOldItems {
+                      daysToKeep(30)
+                      numToKeep(-1)
+                  }
+              }
+
+              triggers {
+                  periodicFolderTrigger {
+                      interval('1h')                 // safety net for missed webhook events
+                  }
+              }
+          }
+      }
+
+  # ---------------------------------------------------------------------------
+  # Phase 8 (D-12/D-26): digest promotion — the ONLY path to qa/uat/prod.
+  # The same scanned+signed digest moves environment→environment; artifacts are
+  # never rebuilt for promotion. Rollback = same job with an explicit DIGEST.
+  # Backed by shared-library step promoteDigest (runs on agent-general).
+  # NOTE: no "${...}" below — JCasC interpolates YAML scalars before the DSL runs.
+  # ---------------------------------------------------------------------------
+  - script: |
+      pipelineJob('platform/gitops-promotion') {
+          displayName('GitOps digest promotion')
+          description('Promote the ALREADY-BUILT (scanned, signed, SBOMed) image digest of a service across environments (dev to qa to uat to prod). Same digest, never rebuilt (D-12/D-26). Rollback: pass an explicit older DIGEST. Kyverno re-verifies the cosign signature at admission in the target cluster.')
+
+          parameters {
+              stringParam('SERVICE', '', 'Service slug — the directory under applications/ in platform/gitops-repository (e.g. orders-api)')
+              choiceParam('TARGET_ENV', ['qa', 'uat', 'prod', 'dev'], 'Environment receiving the digest')
+              stringParam('SOURCE_ENV', '', 'Read the pinned digest from this environment (default: predecessor of TARGET_ENV in dev,qa,uat,prod order)')
+              stringParam('DIGEST', '', 'Optional explicit digest sha256:... — overrides SOURCE_ENV (rollback / hotfix promotion)')
+          }
+
+          logRotator {
+              daysToKeep(90)
+          }
+
+          definition {
+              cps {
+                  sandbox(true)
+                  script(
+                      "node('general') {\n" +
+                      "    stage('Promote digest') {\n" +
+                      "        promoteDigest(\n" +
+                      "            service: params.SERVICE,\n" +
+                      "            targetEnv: params.TARGET_ENV,\n" +
+                      "            sourceEnv: params.SOURCE_ENV ?: null,\n" +
+                      "            digest: params.DIGEST ?: null)\n" +
+                      "    }\n" +
+                      "}\n"
+                  )
+              }
+          }
+      }

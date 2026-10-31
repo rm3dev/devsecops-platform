@@ -1,0 +1,12 @@
+Rendered {{ include "microservice-standard.name" . }} (chart {{ .Chart.Name }}-{{ .Chart.Version }}).
+Workload kind: {{ include "microservice-standard.workloadKind" . }}{{ if .Values.rollout.enabled }} (strategy: {{ .Values.rollout.strategy }} — overlays must include replicas-config.yaml via configurations:){{ end }}
+
+This chart is NOT installed directly — CI renders it into
+applications/{{ .Release.Name }}/base/manifests.yaml and the environment
+overlay (namespace, replicas, immutable image digest, patches) is what
+ArgoCD syncs. To reproduce a render locally:
+
+  ./scripts/render-app.sh {{ .Release.Name }}
+
+Image (pre-overlay): {{ include "microservice-standard.image" . }}
+Digest pinning:      applications/{{ .Release.Name }}/overlays/<env>/kustomization.yaml

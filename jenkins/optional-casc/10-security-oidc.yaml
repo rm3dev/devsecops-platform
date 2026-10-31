@@ -1,0 +1,44 @@
+# =============================================================================
+# OPTIONAL JCasC — OpenID Connect security realm (Phase 11, D-38). NOT MOUNTED.
+#
+# Prerequisites:
+#   1. plugins.txt: UNCOMMENT  oic-auth:4.731.v4932b_506e767  (requires ≥2.539;
+#      platform runs 2.568.3 — verified compatible) and rebuild the controller
+#      image (scripts/build-images.sh)
+#   2. register Jenkins as an OIDC client in your IdP (Keycloak/Entra/Okta…):
+#        redirect URI : https://jenkins.<domain>/securityRealm/finishLogin
+#        post-logout  : https://jenkins.<domain>/OicLogout
+#        scopes       : openid profile email groups
+#        grant        : authorization_code
+#   3. client id/secret → secrets/jenkins.env as OIC_CLIENT_ID / OIC_CLIENT_SECRET
+#   4. mount this file INSTEAD of casc/10-security.yaml (same one-for-one swap
+#      as the LDAP variant — see 10-security-ldap.yaml header)
+#   5. create IdP groups matching the six platform roles and switch the
+#      authorization matrix `user:` → `group:` (master spec §17 roles).
+# =============================================================================
+jenkins:
+  securityRealm:
+    oic:
+      clientId: "${OIC_CLIENT_ID:-SET_AT_CUTOVER}"
+      clientSecret: "${OIC_CLIENT_SECRET:-SET_AT_CUTOVER}"
+      configurationMode: automatic
+      wellKnownOpenIDConfigurationUrl: "${OIC_WELL_KNOWN_URL:-https://idp.example.com/realms/platform/.well-known/openid-configuration}"
+      scopes: "openid profile email groups"
+      displayNameField: "preferred_username"
+      emailFieldName: "email"
+      groupsFieldName: "groups"
+      userNameField: "preferred_username"
+      logoutUrl: "${OIC_LOGOUT_URL:-}"
+      enableLogout: true
+      escapeHatchEnabled: true            # break-glass: local admin login at
+      escapeHatchGroup: "platform-admin"  # /securityRealm/escapeHatchLogin
+      escapeHatchSecret: "${JENKINS_ADMIN_PASSWORD}"   # reuse bootstrap admin pw
+
+  authorizationStrategy:
+    globalMatrix:
+      entries:
+        - group:
+            name: "platform-admin"
+            permissions: ["Overall/Administer"]
+        # …copy the remaining five role blocks from casc/10-security.yaml,
+        #   changing `user:` → `group:` (identical permission lists).

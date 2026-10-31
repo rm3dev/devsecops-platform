@@ -1,0 +1,18 @@
+{{- if and .Values.rollout.enabled (eq .Values.rollout.strategy "blueGreen") .Values.rollout.blueGreen.previewServiceEnabled }}
+{{- /* Blue-green preview service: points at the GREEN (candidate) pods while
+       the active service keeps serving blue — pre-promotion verification
+       target (port-forward / in-cluster tests hit <name>-preview). */ -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "microservice-standard.name" . }}-preview
+  labels:
+    {{- include "microservice-standard.labels" . | nindent 4 }}
+    app.kubernetes.io/component: preview
+spec:
+  type: {{ .Values.service.type }}
+  selector:
+    {{- include "microservice-standard.selectorLabels" . | nindent 4 }}
+  ports:
+    {{- toYaml .Values.service.ports | nindent 4 }}
+{{- end }}

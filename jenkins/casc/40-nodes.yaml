@@ -1,0 +1,57 @@
+# =============================================================================
+# JCasC — WARM AGENT POOL (Phase 3, decision D-05)
+#
+# Three permanently-running agents cover the highest-frequency workloads:
+#   agent-general  → GitOps commits, container builds (buildctl→BuildKit),
+#                    deployment verification, image push (crane)
+#   agent-python   → Python services, shared-library unit tests
+#   agent-security → Trivy/Gitleaks/Semgrep/Syft/Cosign/Kubescape (Phase 7)
+#
+# Java/.NET/Node builds scale dynamically via the Docker cloud (30-clouds.yaml)
+# — they are bursty and must not occupy permanent capacity.
+#
+# These nodes are INBOUND (JNLP4) agents: each container fetches its agent
+# secret at startup from the controller (jenkins/agents/common script) using
+# the admin credentials in secrets/jenkins.env, then connects to
+# http://jenkins:8080 on the internal agents network.
+# =============================================================================
+jenkins:
+  nodes:
+    - permanent:
+        name: "agent-general"
+        labelString: "general gitops container-build warm"
+        numExecutors: 2
+        mode: EXCLUSIVE
+        remoteFS: "/home/jenkins/agent"
+        retentionStrategy: "always"
+        launcher:
+          jnlp:
+            workDirSettings:
+              disabled: false
+              failIfWorkDirIsMissing: false
+
+    - permanent:
+        name: "agent-python"
+        labelString: "python warm"
+        numExecutors: 2
+        mode: EXCLUSIVE
+        remoteFS: "/home/jenkins/agent"
+        retentionStrategy: "always"
+        launcher:
+          jnlp:
+            workDirSettings:
+              disabled: false
+              failIfWorkDirIsMissing: false
+
+    - permanent:
+        name: "agent-security"
+        labelString: "security warm"
+        numExecutors: 2
+        mode: EXCLUSIVE
+        remoteFS: "/home/jenkins/agent"
+        retentionStrategy: "always"
+        launcher:
+          jnlp:
+            workDirSettings:
+              disabled: false
+              failIfWorkDirIsMissing: false

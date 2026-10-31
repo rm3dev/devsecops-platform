@@ -1,0 +1,11 @@
+# Kustomize openapi configuration (Phase 9, D-30): teaches the `replicas:`
+# transformer about the Argo Rollouts Rollout kind — kustomize's built-in
+# targets are Deployment/StatefulSet/ReplicaSet/ReplicationController only,
+# and the replicas field has NO `kind:` key. Must live INSIDE the overlay
+# directory (kustomize security: configurations files cannot be referenced
+# from outside the kustomization root). Copied along when onboarding a new
+# rollout-enabled app. Additive to built-ins; harmless for plain Deployments.
+replicas:
+  - path: spec/replicas
+    create: true
+    kind: Rollout

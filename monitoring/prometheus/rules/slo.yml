@@ -1,0 +1,114 @@
+# =============================================================================
+# SLOs (Phase 10, D-33) — Google SRE workbook multi-window, multi-burn-rate.
+#
+# SLI 1 — control-plane availability (99.5% / 30d): fraction of the FIVE
+#   business-critical scrape targets that are UP (jenkins, gitlab-exporter,
+#   nexus, vault, traefik). Probe-style SLI: honest about "the platform is
+#   usable", cheap, and immune to per-service metric drift.
+# SLI 2 — per-service HTTP success through Traefik (99.9% / 30d):
+#   1 − (5xx rate / total rate), label service.
+#
+# Error budgets: 0.5% and 0.1%. Burn-rate pairs (fast = page, slow = ticket):
+#   fast  14.4×  (5m + 30m windows)  → budget exhausted in  2 days
+#   slow   6.0×  (1h + 6h  windows)  → budget exhausted in  5 days
+# The 30-day availability itself is dashboard material (platform-overview).
+# =============================================================================
+groups:
+  - name: slo:records
+    interval: 30s
+    rules:
+      # --- SLI 1: control-plane availability -------------------------------
+      - record: slo:platform_up:ratio
+        expr: avg(up{job=~"jenkins|gitlab-exporter|nexus|vault|traefik"})
+      - record: slo:platform_up:ratio_rate5m
+        expr: avg_over_time(slo:platform_up:ratio[5m])
+      - record: slo:platform_up:ratio_rate30m
+        expr: avg_over_time(slo:platform_up:ratio[30m])
+      - record: slo:platform_up:ratio_rate1h
+        expr: avg_over_time(slo:platform_up:ratio[1h])
+      - record: slo:platform_up:ratio_rate6h
+        expr: avg_over_time(slo:platform_up:ratio[6h])
+
+      # --- SLI 2: per-service HTTP success via Traefik ----------------------
+      - record: slo:traefik_service_success:ratio_rate5m
+        expr: |
+          1 - (
+            sum by (service) (rate(traefik_service_requests_total{code=~"5.."}[5m]))
+              /
+            sum by (service) (rate(traefik_service_requests_total[5m]))
+          )
+      - record: slo:traefik_service_success:ratio_rate30m
+        expr: |
+          1 - (
+            sum by (service) (rate(traefik_service_requests_total{code=~"5.."}[30m]))
+              /
+            sum by (service) (rate(traefik_service_requests_total[30m]))
+          )
+      - record: slo:traefik_service_success:ratio_rate1h
+        expr: |
+          1 - (
+            sum by (service) (rate(traefik_service_requests_total{code=~"5.."}[1h]))
+              /
+            sum by (service) (rate(traefik_service_requests_total[1h]))
+          )
+      - record: slo:traefik_service_success:ratio_rate6h
+        expr: |
+          1 - (
+            sum by (service) (rate(traefik_service_requests_total{code=~"5.."}[6h]))
+              /
+            sum by (service) (rate(traefik_service_requests_total[6h]))
+          )
+
+  - name: slo:alerts
+    rules:
+      # --- control-plane availability (objective 99.5%, budget 0.005) -------
+      - alert: SLOPlatformAvailabilityFastBurn
+        expr: |
+          (1 - slo:platform_up:ratio_rate5m  > 14.4 * 0.005)
+            and
+          (1 - slo:platform_up:ratio_rate30m > 14.4 * 0.005)
+        for: 2m
+        labels:
+          severity: critical
+          slo: platform-availability
+        annotations:
+          summary: "Control-plane SLO burning 14.4× budget (99.5%/30d) — exhausted in ~2 days"
+          description: "5m availability {{ with query \"slo:platform_up:ratio_rate5m\" }}{{ . | first | value | humanizePercentage }}{{ end }}. Find the DOWN job: up{job=~\"jenkins|gitlab-exporter|nexus|vault|traefik\"} == 0."
+
+      - alert: SLOPlatformAvailabilitySlowBurn
+        expr: |
+          (1 - slo:platform_up:ratio_rate1h > 6 * 0.005)
+            and
+          (1 - slo:platform_up:ratio_rate6h > 6 * 0.005)
+        for: 15m
+        labels:
+          severity: warning
+          slo: platform-availability
+        annotations:
+          summary: "Control-plane SLO burning 6× budget — exhausted in ~5 days"
+
+      # --- per-service HTTP success via Traefik (objective 99.9%, budget 0.001)
+      - alert: SLOServiceErrorBudgetFastBurn
+        expr: |
+          (1 - slo:traefik_service_success:ratio_rate5m  > 14.4 * 0.001)
+            and
+          (1 - slo:traefik_service_success:ratio_rate30m > 14.4 * 0.001)
+        for: 2m
+        labels:
+          severity: critical
+          slo: service-availability
+        annotations:
+          summary: "Service '{{ $labels.service }}' burning its 99.9% error budget 14.4× fast"
+          description: "5xx ratio through Traefik sustained over 5m+30m windows. Recent deploy? Check ArgoCD history + rollback (gitops.md §9.4)."
+
+      - alert: SLOServiceErrorBudgetSlowBurn
+        expr: |
+          (1 - slo:traefik_service_success:ratio_rate1h > 6 * 0.001)
+            and
+          (1 - slo:traefik_service_success:ratio_rate6h > 6 * 0.001)
+        for: 15m
+        labels:
+          severity: warning
+          slo: service-availability
+        annotations:
+          summary: "Service '{{ $labels.service }}' burning its 99.9% error budget 6× (ticket)"

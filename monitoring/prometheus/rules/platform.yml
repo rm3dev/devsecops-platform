@@ -1,0 +1,80 @@
+# =============================================================================
+# Platform alert rules (Phase 2 baseline — CI/CD-specific alert set expands in
+# Phase 10 together with Grafana dashboards and notification receivers)
+# =============================================================================
+groups:
+  - name: platform-availability
+    rules:
+      - alert: TargetDown
+        expr: up == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Scrape target {{ $labels.job }}/{{ $labels.instance }} is down"
+          description: "Prometheus could not scrape {{ $labels.instance }} of job {{ $labels.job }} for 5 minutes."
+
+      - alert: TraefikBackendErrors
+        expr: |
+          sum(rate(traefik_service_requests_total{code=~"5.."}[5m])) by (service)
+            /
+          sum(rate(traefik_service_requests_total[5m])) by (service) > 0.2
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Service {{ $labels.service }} returns >20% 5xx through Traefik"
+
+  - name: host-resources
+    rules:
+      - alert: HostDiskSpaceLow
+        expr: |
+          node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"}
+            / node_filesystem_size_bytes{fstype!~"tmpfs|overlay"} < 0.10
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Less than 10% free disk on {{ $labels.mountpoint }} ({{ $labels.instance }})"
+
+      - alert: HostMemoryPressure
+        expr: |
+          node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes < 0.10
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Less than 10% available memory on {{ $labels.instance }}"
+
+      - alert: ContainerRestarting
+        expr: |
+          changes(container_start_time_seconds[1h]) > 2
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container {{ $labels.name }} restarted more than twice in the last hour"
+
+      - alert: ContainerHighMemory
+        expr: |
+          container_memory_usage_bytes{name!=""}
+            > on(name) group_left()
+          (0.9 * container_spec_memory_limit_bytes{name!=""})
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container {{ $labels.name }} uses >90% of its memory limit for 15m"
+
+  - name: watchdog
+    rules:
+      # Dead-man's switch (Phase 10): fires unconditionally and is routed to a
+      # no-op receiver. If it ever STOPS firing, the whole alerting path
+      # (Prometheus → Alertmanager) is broken — external uptime checks can
+      # assert its presence via the Alertmanager API (observability.md §6).
+      - alert: Watchdog
+        expr: vector(1)
+        labels:
+          severity: none
+        annotations:
+          summary: "Alerting-path heartbeat (always firing — absence means the pipeline is dead)"

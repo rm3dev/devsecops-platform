@@ -1,0 +1,30 @@
+# Platform namespaces. Workload namespaces (<service>-<env>) are created by
+# ArgoCD (syncOptions: CreateNamespace=true) — they are NOT listed here.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: argocd
+  labels:
+    app.kubernetes.io/part-of: argocd
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kyverno
+  labels:
+    app.kubernetes.io/part-of: kyverno
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: external-secrets
+  labels:
+    app.kubernetes.io/part-of: external-secrets
+---
+# Read-only verification identity for Jenkins (Phase 9 verifyDeployment)
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: platform-tools
+  labels:
+    app.kubernetes.io/part-of: devsecops-platform

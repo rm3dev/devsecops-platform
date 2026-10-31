@@ -1,0 +1,20 @@
+apiVersion: v2
+name: microservice-standard
+description: >-
+  Standard deployment chart for every platform microservice. Rendered by CI
+  (updateGitOps) into applications/<svc>/base/manifests.yaml; per-environment
+  differences (namespace, replicas, image DIGEST, config patches) are applied
+  by the Kustomize overlays — images are never deployed by mutable tag (D-26).
+type: application
+# Chart version: bump on every template change (the rendered manifests in
+# applications/*/base carry a `helm.sh/chart` label that records it).
+# 1.1.0 — Phase 9: optional Argo Rollouts Rollout (canary/blue-green) via
+#         rollout.enabled; shared podTemplate helper; HPA target follows kind.
+version: 1.1.0
+appVersion: "1.1.0"
+keywords:
+  - microservice
+  - standard
+  - gitops
+maintainers:
+  - name: Platform Engineering

@@ -1,0 +1,181 @@
+# =============================================================================
+# Traefik dynamic configuration TEMPLATE (Phase 2)
+# scripts/bootstrap.sh renders this with envsubst into
+# reverse-proxy/configuration/dynamic/dynamic.yml (gitignored, generated).
+#
+# Substituted variables (whitelisted in bootstrap.sh — written here WITHOUT
+# the dollar-brace syntax so envsubst does not touch this comment block):
+#   PLATFORM_DOMAIN             from .env
+#   ADMIN_IP_ALLOWLIST_YAML     generated YAML list from ADMIN_IP_ALLOWLIST
+#   MONITORING_HTPASSWD         generated htpasswd line (secrets/monitoring.env)
+# =============================================================================
+
+tls:
+  stores:
+    default:
+      defaultCertificate:
+        certFile: /certs/platform-wildcard.crt
+        keyFile: /certs/platform-wildcard.key
+  options:
+    default:
+      minVersion: VersionTLS12
+      sniStrict: false        # registry + gitlab clients rely on SNI matching wildcard cert
+      # Phase 11 hardening: forward-secret AEAD suites only (TLS 1.3 suites are
+      # always on in Go and not configurable here). ChaCha20 keeps ARM/laptop
+      # clients fast; GCM covers servers with AES-NI.
+      cipherSuites:
+        - TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384
+        - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
+        - TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256
+        - TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+        - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305
+        - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305
+      curvePreferences:
+        - CurveP521
+        - CurveP384
+
+http:
+  middlewares:
+    secure-headers:
+      headers:
+        stsSeconds: 31536000
+        stsIncludeSubdomains: true
+        forceSTSHeader: true
+        contentTypeNosniff: true
+        browserXssFilter: true
+        frameDeny: true
+        referrerPolicy: "strict-origin-when-cross-origin"
+        customResponseHeaders:
+          Server: ""
+
+    admin-ipallowlist:
+      ipAllowList:
+        sourceRange:
+${ADMIN_IP_ALLOWLIST_YAML}
+
+    monitoring-auth:
+      basicAuth:
+        users:
+          - "${MONITORING_HTPASSWD}"
+
+  routers:
+    gitlab:
+      rule: Host(`gitlab.${PLATFORM_DOMAIN}`)
+      entryPoints: [websecure]
+      service: gitlab
+      middlewares: [secure-headers]
+      tls: {}
+
+    jenkins:
+      rule: Host(`jenkins.${PLATFORM_DOMAIN}`)
+      entryPoints: [websecure]
+      service: jenkins
+      middlewares: [secure-headers]
+      tls: {}
+
+    sonarqube:
+      rule: Host(`sonar.${PLATFORM_DOMAIN}`)
+      entryPoints: [websecure]
+      service: sonarqube
+      middlewares: [secure-headers]
+      tls: {}
+
+    nexus:
+      rule: Host(`nexus.${PLATFORM_DOMAIN}`)
+      entryPoints: [websecure]
+      service: nexus
+      middlewares: [secure-headers]
+      tls: {}
+
+    grafana:
+      rule: Host(`grafana.${PLATFORM_DOMAIN}`)
+      entryPoints: [websecure]
+      service: grafana
+      middlewares: [secure-headers]
+      tls: {}
+
+    vault:
+      rule: Host(`vault.${PLATFORM_DOMAIN}`)
+      entryPoints: [websecure]
+      service: vault
+      middlewares: [secure-headers, admin-ipallowlist]
+      tls: {}
+
+    prometheus:
+      rule: Host(`prometheus.${PLATFORM_DOMAIN}`)
+      entryPoints: [websecure]
+      service: prometheus
+      middlewares: [monitoring-auth, secure-headers]
+      tls: {}
+
+    alertmanager:
+      rule: Host(`alertmanager.${PLATFORM_DOMAIN}`)
+      entryPoints: [websecure]
+      service: alertmanager
+      middlewares: [monitoring-auth, secure-headers]
+      tls: {}
+
+  services:
+    gitlab:
+      loadBalancer:
+        servers:
+          - url: http://gitlab:80
+        passHostHeader: true
+
+    jenkins:
+      loadBalancer:
+        servers:
+          - url: http://jenkins:8080
+        passHostHeader: true
+
+    sonarqube:
+      loadBalancer:
+        servers:
+          - url: http://sonarqube:9000
+        passHostHeader: true
+
+    nexus:
+      loadBalancer:
+        servers:
+          - url: http://nexus:8081
+        passHostHeader: true
+
+    grafana:
+      loadBalancer:
+        servers:
+          - url: http://grafana:3000
+        passHostHeader: true
+
+    vault:
+      loadBalancer:
+        servers:
+          - url: http://vault:8200
+        passHostHeader: true
+
+    prometheus:
+      loadBalancer:
+        servers:
+          - url: http://prometheus:9090
+        passHostHeader: true
+
+    alertmanager:
+      loadBalancer:
+        servers:
+          - url: http://alertmanager:9093
+        passHostHeader: true
+
+tcp:
+  routers:
+    # Docker registry endpoint (Nexus docker-GROUP connector, created Phase 5).
+    # TLS terminates at Traefik; plain HTTP/1.1 registry protocol to Nexus.
+    nexus-registry:
+      rule: HostSNI(`registry.${PLATFORM_DOMAIN}`)
+      entryPoints: [websecure]
+      service: nexus-registry
+      tls: {}
+
+  services:
+    nexus-registry:
+      loadBalancer:
+        servers:
+          - address: nexus:8085

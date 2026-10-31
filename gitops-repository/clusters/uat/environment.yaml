@@ -1,0 +1,69 @@
+# =============================================================================
+# UAT environment — AppProject + ApplicationSet (synced by the platform-root
+# app-of-apps). TEMPLATED FILE: ${PLATFORM_DOMAIN} is substituted by
+# gitlab/scripts/50-gitops-repository.sh at push time — do not hardcode.
+#
+# Onboarding a new service: create applications/<svc>/{values.yaml,base,
+# overlays/uat} — the git directory generator picks it up automatically.
+# =============================================================================
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: uat
+  namespace: argocd
+  labels:
+    environment: uat
+spec:
+  description: UAT environment (auto-synced; digests arrive via promotion from qa)
+  sourceRepos:
+    - https://gitlab.${PLATFORM_DOMAIN}/platform/gitops-repository.git
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: "*-uat"
+  # Applications may NOT create cluster-scoped resources.
+  clusterResourceWhitelist: []
+  orphanedResources:
+    warn: true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: uat-apps
+  namespace: argocd
+  labels:
+    environment: uat
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - git:
+        repoURL: https://gitlab.${PLATFORM_DOMAIN}/platform/gitops-repository.git
+        revision: main
+        directories:
+          - path: applications/*/overlays/uat
+  template:
+    metadata:
+      name: '{{ index .path.segments 1 }}-uat'
+      labels:
+        environment: uat
+      finalizers:
+        - resources-finalizer.argocd.argoproj.io
+    spec:
+      project: uat
+      source:
+        repoURL: https://gitlab.${PLATFORM_DOMAIN}/platform/gitops-repository.git
+        targetRevision: main
+        path: '{{ .path.path }}'
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: '{{ index .path.segments 1 }}-uat'
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
+          - ApplyOutOfSyncOnly=true
+        retry:
+          limit: 5
+          backoff: { duration: 10s, factor: 2, maxDuration: 3m }

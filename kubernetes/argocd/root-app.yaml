@@ -1,0 +1,57 @@
+# =============================================================================
+# platform-root — the app-of-apps (TEMPLATED: ${PLATFORM_DOMAIN} substituted by
+# argocd/install-argocd.sh via envsubst). Syncs clusters/ from the
+# gitops-repository, which materializes the per-environment AppProjects and
+# ApplicationSets; those in turn create one Application per
+# applications/*/overlays/<env> directory. Adding a service = adding a
+# directory. Adding an environment = adding clusters/<env>/environment.yaml.
+# =============================================================================
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: platform-root
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: devsecops-platform
+spec:
+  description: Platform app-of-apps — owns AppProjects and ApplicationSets only
+  sourceRepos:
+    - https://gitlab.${PLATFORM_DOMAIN}/platform/gitops-repository.git
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: argocd
+  # The root app may create AppProjects (cluster-scoped) — nothing else.
+  clusterResourceWhitelist:
+    - group: argoproj.io
+      kind: AppProject
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: platform-root
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: devsecops-platform
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: platform-root
+  source:
+    repoURL: https://gitlab.${PLATFORM_DOMAIN}/platform/gitops-repository.git
+    targetRevision: main
+    path: clusters
+    directory:
+      recurse: true
+      include: "*.yaml"
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ApplyOutOfSyncOnly=true
+    retry:
+      limit: 5
+      backoff: { duration: 10s, factor: 2, maxDuration: 3m }

@@ -1,0 +1,52 @@
+# =============================================================================
+# TEMPLATED — applied by kyverno/cosign-public-key.sh (envsubst for
+# ${PLATFORM_DOMAIN}; the publicKeys block is REPLACED there with the current
+# secrets/cosign/cosign.pub via yq). Do not kubectl-apply this file directly.
+#
+# D-25/D-28: every image from the platform registry must carry a cosign
+# signature made with the platform keypair (Phase 7 signImage signs BY DIGEST,
+# so the signature travels with the artifact across environment promotions).
+# =============================================================================
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: verify-image-signature
+  annotations:
+    policies.kyverno.io/title: Platform images must be cosign-signed
+    policies.kyverno.io/description: >-
+      Verifies cosign signatures of registry.${PLATFORM_DOMAIN} images against
+      the platform public key. Unsigned or foreign-signed images are rejected
+      at admission. Platform namespaces are excluded (vendor/system images).
+spec:
+  validationFailureAction: Enforce
+  background: false
+  failurePolicy: Fail
+  rules:
+    - name: verify-cosign-platform-key
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kube-system
+                - kube-public
+                - kube-node-lease
+                - kyverno
+                - argocd
+                - external-secrets
+                - platform-tools
+                - argo-rollouts
+      verifyImages:
+        - imageReferences:
+            - "registry.${PLATFORM_DOMAIN}/*"
+          attestors:
+            - entries:
+                - keys:
+                    publicKeys: |-
+                      -----BEGIN PUBLIC KEY-----
+                      PLACEHOLDER-REPLACED-BY-cosign-public-key.sh
+                      -----END PUBLIC KEY-----

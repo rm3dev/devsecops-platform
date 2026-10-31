@@ -1,0 +1,98 @@
+# =============================================================================
+# JCasC — integrations & global configuration (Phase 3)
+# Values referencing other platform components use INTERNAL Docker DNS names
+# (http://gitlab, http://sonarqube:9000 …) — never the public hostnames, so CI
+# traffic never hairpins through Traefik.
+# =============================================================================
+unclassified:
+  location:
+    url: "https://jenkins.${PLATFORM_DOMAIN}/"
+    adminAddress: "devsecops-platform@${PLATFORM_DOMAIN}"
+
+  # Shared library consumed by every microservice pipeline (@Library('devsecops-shared-library'))
+  globalLibraries:
+    libraries:
+      - name: "devsecops-shared-library"
+        defaultVersion: "main"
+        implicit: true
+        includeInChangesets: false
+        retriever:
+          modernSCM:
+            scm:
+              git:
+                remote: "http://gitlab/platform/devsecops-shared-library.git"
+                credentialsId: "gitlab-jenkins-user"
+
+  # GitLab connection used by GitLab Branch Source + commit status + MR notes
+  gitLabConnectionConfig:
+    connections:
+      - name: "gitlab"
+        url: "http://gitlab"
+        apiTokenId: "gitlab-api-token"
+        clientBuilderId: "autodetect"
+        connectionTimeout: 10
+        readTimeout: 10
+
+  # GitLab Branch Source server (Phase 6, D-22) — powers the organization
+  # folders in 60-jobs.yaml. manageWebHooks is OFF on purpose: jenkins-ci is a
+  # Developer on 'teams' and CANNOT manage project hooks (GitLab requires
+  # Maintainer). Webhooks are registered at onboarding by the platform admin
+  # with gitlab/scripts/add-webhook.sh (root token); the hourly org-folder scan
+  # is the safety net for missed events. secretToken matches GITLAB_WEBHOOK_TOKEN
+  # so incoming X-Gitlab-Token headers are verified.
+  gitLabServers:
+    servers:
+      - name: "gitlab"
+        serverUrl: "http://gitlab"
+        credentialsId: "gitlab-branch-source-token"
+        manageWebHooks: false
+        manageSystemHooks: false
+        hooksRootUrl: ""
+        secretToken: "${GITLAB_WEBHOOK_TOKEN:-SET_IN_PHASE_4}"
+
+  # SonarQube server (quality-gate webhook secret shared with Phase 5 setup)
+  sonarGlobalConfiguration:
+    buildWrapperEnabled: true
+    installations:
+      - name: "SonarQube"
+        serverUrl: "http://sonarqube:9000"
+        serverAuthenticationToken: "sonarqube-admin-token"
+        webhookSecretId: "sonarqube-webhook-token"
+
+  # Timestamper on every pipeline (audit-friendly console logs)
+  timestamper:
+    allPipelines: true
+    elapsedTimeFormat: "'<b>'HH:mm:ss.SSS'</b> '"
+    systemTimeFormat: "'<b>'yyyy-MM-dd HH:mm:ss.SSS'</b> '"
+
+  # SMTP — host/port supplied by environment when the site provides them
+  # (Phase 10 wires notification routing + Vault-sourced webhook URLs)
+  mailer:
+    smtpHost: "${SMTP_HOST:-}"
+    smtpPort: "${SMTP_PORT:-587}"
+    replyToAddress: "${SMTP_FROM:-devsecops-platform@localhost}"
+    charset: "UTF-8"
+    # Phase 10: SMTP auth from secrets/jenkins-notifications.env — empty
+    # values mean "no authentication" (mailer skips auth when username empty)
+    smtpAuthUsername: "${SMTP_USER:-}"
+    smtpAuthPassword: "${SMTP_PASSWORD:-}"
+
+  # Vault plugin GLOBAL configuration (Phase 11, D-36) — withVault(...) in
+  # pipelines falls back to these values: controller ↔ vault over the shared
+  # frontend-network, AppRole credential from vault/scripts/50-jenkins-approle.sh
+  # (1h tokens, policy-scoped to secret/platform/{notifications,cosign}).
+  vaultConfiguration:
+    vaultUrl: "http://vault:8200"
+    vaultCredentialId: "vault-approle"
+    engineVersion: 2
+
+  # Prometheus scrape endpoint: GET /prometheus/ (job 'jenkins' in
+  # monitoring/prometheus/prometheus.yml — goes UP with this plugin installed)
+  prometheusConfiguration:
+    url: "prometheus"
+    useAuthenticatedEndpoint: false
+    defaultNamespace: "jenkins"
+    countFinishedBuilds: true
+    countFailedBuilds: true
+    countSuccessfulBuilds: true
+    countUnstableBuilds: true

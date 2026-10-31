@@ -1,0 +1,29 @@
+# =============================================================================
+# OPTIONAL per-service metadata & overrides — placed at the repository root
+# (single-service repos) or in each service directory (monorepos).
+# Everything here is validated fail-closed by PlatformConfig/validateProject.
+# =============================================================================
+serviceName: payment-service          # must be unique within the repository
+language: java                        # optional — inferred from manifests if absent
+buildTool: maven                      # maven|maven-wrapper|gradle|gradle-wrapper|pip|poetry|npm|pnpm|yarn|msbuild
+framework: spring-boot                # informational + stage tuning
+deploymentType: helm                  # helm|kustomize
+dockerfile: Dockerfile                # optional explicit path relative to this file
+environments: [dev, qa, uat, prod]    # subset of the organization list
+
+# Monorepo impact analysis: rebuild this service when any listed service/
+# shared-library directory changes (used by detectProject changedOnly).
+dependsOn:
+  - shared-libs/common-models
+
+# Tightening-only security overrides (weakening fails the build):
+security:
+  container:
+    block_on_medium: true             # this service opts into stricter gating
+
+# Optional opt-outs must carry justification (enforced by reviewers + audit):
+# allowNoLockfile: true               # node projects without lockfile
+
+owners:
+  team: payments
+  contact: payments@example.com

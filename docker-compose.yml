@@ -1,0 +1,898 @@
+# =============================================================================
+# DevSecOps Platform — base Docker Compose file (Phase 2)
+#
+# Profiles:
+#   core       GitLab, Jenkins, SonarQube(+DB), Nexus, Vault, Traefik
+#   monitoring Prometheus, Alertmanager, Grafana, Loki, Alloy, exporters, Traefik
+#   build      BuildKit (rootless) + docker-socket-proxy  (Phase 3 adds agents)
+#   backup     restic backup runner (basic file-level; consistent dumps in P11)
+#   all        everything above
+#
+# Start via scripts/bootstrap.sh (generates secrets, TLS, dynamic proxy config)
+# or manually:  docker compose --profile core --profile monitoring up -d
+#
+# Design references: documentation/architecture.md §4 (networks), §5 (ports),
+# §6 (storage/ownership), §7 (sizing), §8 (hardening).
+# =============================================================================
+
+name: devsecops-platform
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "50m"
+    max-file: "3"
+
+x-security: &hardened
+  security_opt:
+    - no-new-privileges:true
+
+networks:
+  frontend-network:
+    name: devsecops-frontend
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+  scm-network:
+    name: devsecops-scm
+    driver: bridge
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.30.1.0/24
+  cicd-network:
+    name: devsecops-cicd
+    driver: bridge
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.30.2.0/24
+  artifact-network:
+    name: devsecops-artifact
+    driver: bridge
+    # NOT internal: Nexus proxy repositories, base-image pulls and scanner DB
+    # downloads require upstream egress. Containers sharing this network share
+    # that egress — see architecture.md §4.1 note.
+    ipam:
+      config:
+        - subnet: 172.30.3.0/24
+  security-network:
+    name: devsecops-security
+    driver: bridge
+    # NOT internal: Trivy/Semgrep/Gitleaks DB + ruleset downloads (Phase 7).
+    ipam:
+      config:
+        - subnet: 172.30.4.0/24
+  monitoring-network:
+    name: devsecops-monitoring
+    driver: bridge
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.30.5.0/24
+  management-network:
+    name: devsecops-management
+    driver: bridge
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.30.6.0/24
+  agents-network:
+    name: devsecops-agents
+    driver: bridge
+    internal: true
+    # Dedicated plane for build agents (D-16): agents reach ONLY the CI/CD
+    # services they need (jenkins, gitlab, sonarqube, nexus, vault, buildkitd)
+    # and have NO direct internet egress — dependencies flow exclusively
+    # through Nexus proxy repositories. docker-plugin templates support a
+    # single network per agent, which this dedicated network also solves.
+    ipam:
+      config:
+        - subnet: 172.30.7.0/24
+
+services:
+
+  # ===========================================================================
+  # Reverse proxy — the ONLY service publishing HTTP(S) ports (architecture §5)
+  # ===========================================================================
+  traefik:
+    image: traefik:${TRAEFIK_VERSION}
+    profiles: ["core", "monitoring", "all"]
+    restart: unless-stopped
+    <<: *hardened
+    logging: *default-logging
+    ports:
+      - "${HTTP_PORT}:80"
+      - "${HTTPS_PORT}:443"
+    volumes:
+      - ./reverse-proxy/configuration/traefik.yml:/etc/traefik/traefik.yml:ro
+      - ./reverse-proxy/configuration/dynamic:/etc/traefik/dynamic:ro
+      - ./reverse-proxy/certificates:/certs:ro
+    networks:
+      - frontend-network
+      - monitoring-network
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          cpus: "${TRAEFIK_CPU_LIMIT}"
+          memory: ${TRAEFIK_MEM_LIMIT}
+        reservations:
+          memory: 128M
+
+  # ===========================================================================
+  # Source code management — GitLab CE (omnibus; internal Postgres/Redis, D-03)
+  # ===========================================================================
+  gitlab:
+    image: gitlab/gitlab-ce:${GITLAB_VERSION}
+    profiles: ["core", "all"]
+    restart: unless-stopped
+    hostname: gitlab.${PLATFORM_DOMAIN}
+    shm_size: 256m
+    logging: *default-logging
+    env_file:
+      - ./secrets/gitlab.env
+    environment:
+      TZ: ${TZ}
+      GITLAB_OMNIBUS_CONFIG: |
+        external_url 'https://gitlab.${PLATFORM_DOMAIN}'
+        letsencrypt['enable'] = false
+        nginx['listen_port'] = 80
+        nginx['listen_https'] = false
+        nginx['proxy_set_headers'] = {
+          'Host' => 'gitlab.${PLATFORM_DOMAIN}',
+          'X-Forwarded-Proto' => 'https',
+          'X-Forwarded-Ssl' => 'on'
+        }
+        gitlab_rails['gitlab_shell_ssh_port'] = ${GITLAB_SSH_PORT}
+        gitlab_rails['gitlab_email_enabled'] = false
+        # Deterministic root password on first boot (from secrets/gitlab.env);
+        # ignored on subsequent boots once the account exists.
+        gitlab_rails['initial_root_password'] = ENV['GITLAB_ROOT_PASSWORD']
+        # Phase 4/D-18: webhooks target Jenkins over the INTERNAL scm network
+        # (http://jenkins:8080) — GitLab must be allowed to call private-range
+        # addresses. Contained risk: only this GitLab instance makes such
+        # calls, and only to services on its own networks.
+        gitlab_rails['allow_local_requests_from_web_hooks_and_services'] = true
+        # Backups kept 14 days locally; off-host copy handled by restic (P11)
+        gitlab_rails['backup_keep_time'] = 1209600
+        # Phase 10: exporters ONLY — the bundled Prometheus/Grafana/Alertmanager
+        # inside omnibus stay disabled (external stack scrapes gitlab:9168).
+        prometheus_monitoring['enable'] = true
+        prometheus['enable'] = false
+        alertmanager['enable'] = false
+        node_exporter['enable'] = false     # host metrics: our own node-exporter
+        gitlab_exporter['enable'] = true
+        gitlab_exporter['listen_address'] = '0.0.0.0'
+        gitlab_exporter['listen_port'] = 9168
+        puma['worker_processes'] = 2
+        sidekiq['max_concurrency'] = 10
+        registry['enable'] = false
+        grafana['enable'] = false
+    ports:
+      # Git over SSH cannot traverse the HTTP proxy — only exception to the
+      # "Traefik-only" rule (architecture §5).
+      - "${GITLAB_SSH_PORT}:22"
+    volumes:
+      - ${DATA_ROOT}/gitlab/config:/etc/gitlab
+      - ${DATA_ROOT}/gitlab/logs:/var/log/gitlab
+      - ${DATA_ROOT}/gitlab/data:/var/opt/gitlab
+    networks:
+      - frontend-network
+      - scm-network
+      - monitoring-network
+      - agents-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost/-/health || exit 1"]
+      interval: 30s
+      timeout: 15s
+      retries: 10
+      start_period: 600s
+    deploy:
+      resources:
+        limits:
+          cpus: "${GITLAB_CPU_LIMIT}"
+          memory: ${GITLAB_MEM_LIMIT}
+        reservations:
+          memory: 4g
+
+  # ===========================================================================
+  # CI orchestrator — Jenkins controller (0 executors; builds run on agents)
+  # Custom image + JCasC + plugins arrive in Phase 3; pinned official LTS until
+  # then (JENKINS_IMAGE_OVERRIDE stays inert).
+  # ===========================================================================
+  jenkins:
+    image: ${JENKINS_IMAGE_OVERRIDE:-jenkins/jenkins}:${JENKINS_VERSION}
+    profiles: ["core", "all"]
+    restart: unless-stopped
+    <<: *hardened
+    logging: *default-logging
+    env_file:
+      - ./secrets/jenkins.env
+      - ./secrets/gitlab-jenkins.env
+      - ./secrets/sonar-jenkins.env
+      - ./secrets/nexus-jenkins.env
+      - ./secrets/cosign.env
+      - ./secrets/argocd.env
+      - ./secrets/k8s.env
+      - ./secrets/jenkins-notifications.env
+      - ./secrets/vault-jenkins.env
+    environment:
+      TZ: ${TZ}
+      JENKINS_SLAVE_AGENT_PORT: "50000"
+      PLATFORM_DOMAIN: ${PLATFORM_DOMAIN}
+      AGENT_IMAGE_TAG: ${AGENT_IMAGE_TAG}
+      JAVA_OPTS: >-
+        -Djava.awt.headless=true
+        -Xmx${JENKINS_JAVA_XMX}
+        -Dhudson.model.DirectoryBrowserSupport.CSP="sandbox allow-scripts"
+        -Djenkins.install.runSetupWizard=false
+    volumes:
+      - ${DATA_ROOT}/jenkins-home:/var/jenkins_home
+      - ${DATA_ROOT}/agent-workspaces:/agent-workspaces
+      - ./jenkins/casc:/var/jenkins_home/casc:ro
+      - ./jenkins/init.groovy.d:/var/jenkins_home/init.groovy.d:ro
+    networks:
+      - frontend-network
+      - scm-network
+      - cicd-network
+      - artifact-network
+      - security-network
+      - agents-network
+      - monitoring-network    # Phase 10: Prometheus scrapes /prometheus/ (job 'jenkins')
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/login >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 240s
+    deploy:
+      resources:
+        limits:
+          cpus: "${JENKINS_CPU_LIMIT}"
+          memory: ${JENKINS_MEM_LIMIT}
+        reservations:
+          memory: 2g
+
+  # ===========================================================================
+  # Warm agent pool (profile: agents) — decision D-05: three permanent agents
+  # for high-frequency workloads; java/gradle/dotnet/node scale dynamically via
+  # the Docker cloud (jenkins/casc/30-clouds.yaml). Images are built by
+  # scripts/build-images.sh from jenkins/agents/*/Dockerfile.
+  # ===========================================================================
+  agent-general:
+    image: devsecops/agent-general:${AGENT_IMAGE_TAG}
+    profiles: ["agents", "all"]
+    restart: unless-stopped
+    <<: *hardened
+    logging: *default-logging
+    depends_on:
+      jenkins:
+        condition: service_healthy
+    env_file:
+      - ./secrets/jenkins.env
+      # ARGOCD_SERVER_URL/ARGOCD_OPTS (deployApplication) + read-only kubeconfig
+      # (verifyDeployment, Phase 9) — provisioned by kubernetes/ scripts.
+      - ./secrets/argocd.env
+      - ./secrets/k8s.env
+    environment:
+      AGENT_NAME: agent-general
+      JENKINS_INTERNAL_URL: ${JENKINS_URL}
+      # steps read env.PLATFORM_DOMAIN ON THE AGENT (registry host, GitOps URLs)
+      PLATFORM_DOMAIN: ${PLATFORM_DOMAIN}
+      TZ: ${TZ}
+    volumes:
+      - ${DATA_ROOT}/agent-workspaces/agent-general:/home/jenkins/agent
+    networks:
+      - agents-network
+      # artifact-network provides the egress this agent legitimately needs:
+      # ArgoCD API + Kubernetes API on the deployment-plane hosts (Phase 8/9).
+      - artifact-network
+    healthcheck:
+      test: ["CMD-SHELL", "jps | grep -qE 'Engine|Launcher' || exit 1"]
+      interval: 60s
+      timeout: 15s
+      retries: 5
+      start_period: 180s
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 4g
+        reservations:
+          memory: 1g
+
+  agent-python:
+    image: devsecops/agent-python:${AGENT_IMAGE_TAG}
+    profiles: ["agents", "all"]
+    restart: unless-stopped
+    <<: *hardened
+    logging: *default-logging
+    depends_on:
+      jenkins:
+        condition: service_healthy
+    env_file:
+      - ./secrets/jenkins.env
+    environment:
+      AGENT_NAME: agent-python
+      JENKINS_INTERNAL_URL: ${JENKINS_URL}
+      TZ: ${TZ}
+    volumes:
+      - ${DATA_ROOT}/agent-workspaces/agent-python:/home/jenkins/agent
+      - pip-cache:/home/jenkins/.cache/pip
+    networks:
+      - agents-network
+    healthcheck:
+      test: ["CMD-SHELL", "jps | grep -qE 'Engine|Launcher' || exit 1"]
+      interval: 60s
+      timeout: 15s
+      retries: 5
+      start_period: 180s
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 4g
+        reservations:
+          memory: 1g
+
+  agent-security:
+    image: devsecops/agent-security:${AGENT_IMAGE_TAG}
+    profiles: ["agents", "all"]
+    restart: unless-stopped
+    <<: *hardened
+    logging: *default-logging
+    depends_on:
+      jenkins:
+        condition: service_healthy
+    env_file:
+      - ./secrets/jenkins.env
+    environment:
+      AGENT_NAME: agent-security
+      JENKINS_INTERNAL_URL: ${JENKINS_URL}
+      # steps read env.PLATFORM_DOMAIN ON THE AGENT (registry host, RegistryAuth)
+      PLATFORM_DOMAIN: ${PLATFORM_DOMAIN}
+      TZ: ${TZ}
+    volumes:
+      - ${DATA_ROOT}/agent-workspaces/agent-security:/home/jenkins/agent
+      - trivy-cache:/home/jenkins/.cache/trivy
+      # OWASP Dependency-Check NVD mirror — updated HOST-SIDE by
+      # security/scripts/20-dependency-check-db.sh (agents have no internet, D-16)
+      - ${DATA_ROOT}/security/dependency-check:/owasp-dc
+    networks:
+      - agents-network
+      # security-network provides egress for scanner DB/ruleset downloads
+      # (Trivy DB, Semgrep registry) and reaches Vault.
+      - security-network
+    healthcheck:
+      test: ["CMD-SHELL", "jps | grep -qE 'Engine|Launcher' || exit 1"]
+      interval: 60s
+      timeout: 15s
+      retries: 5
+      start_period: 180s
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 4g
+        reservations:
+          memory: 1g
+
+  # ===========================================================================
+  # Code quality — SonarQube Community Build + dedicated PostgreSQL (D-07/D-08)
+  # ===========================================================================
+  sonarqube-db:
+    image: postgres:${POSTGRES_VERSION}
+    profiles: ["core", "all"]
+    restart: unless-stopped
+    <<: *hardened
+    logging: *default-logging
+    env_file:
+      - ./secrets/sonar-db.env
+    volumes:
+      - ${DATA_ROOT}/sonarqube-db:/var/lib/postgresql/data
+    networks:
+      - management-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sonar -d sonar"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          cpus: "${SONAR_DB_CPU_LIMIT}"
+          memory: ${SONAR_DB_MEM_LIMIT}
+        reservations:
+          memory: 1g
+
+  sonarqube:
+    image: sonarqube:${SONARQUBE_VERSION}
+    profiles: ["core", "all"]
+    restart: unless-stopped
+    logging: *default-logging
+    depends_on:
+      sonarqube-db:
+        condition: service_healthy
+    env_file:
+      - ./secrets/sonar.env
+    environment:
+      SONAR_JDBC_URL: jdbc:postgresql://sonarqube-db:5432/sonar
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    volumes:
+      - ${DATA_ROOT}/sonarqube/data:/opt/sonarqube/data
+      - ${DATA_ROOT}/sonarqube/extensions:/opt/sonarqube/extensions
+      - ${DATA_ROOT}/sonarqube/logs:/opt/sonarqube/logs
+    networks:
+      - frontend-network
+      - cicd-network
+      - management-network
+      - monitoring-network
+      - agents-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9000/api/system/status | grep -qE '\"status\":\"(UP|DB_MIGRATION_NEEDED|DB_MIGRATION_RUNNING)\"' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 20
+      start_period: 300s
+    deploy:
+      resources:
+        limits:
+          cpus: "${SONARQUBE_CPU_LIMIT}"
+          memory: ${SONARQUBE_MEM_LIMIT}
+        reservations:
+          memory: 3g
+
+  # ===========================================================================
+  # Artifact & container registry — Nexus Repository OSS (D-06)
+  # Repository provisioning (docker/maven/npm/pypi/nuget/raw + policies):
+  # Phase 5 via nexus/scripts/. The container alone does NOT create them.
+  # ===========================================================================
+  nexus:
+    image: sonatype/nexus3:${NEXUS_VERSION}
+    profiles: ["core", "all"]
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      INSTALL4J_ADD_VM_PARAMS: >-
+        -Xms1g -Xmx${NEXUS_JAVA_XMX} -XX:MaxDirectMemorySize=2g
+        -Djava.util.prefs.userRoot=/nexus-data/javaprefs
+    volumes:
+      - ${DATA_ROOT}/nexus-data:/nexus-data
+    networks:
+      - frontend-network
+      - artifact-network
+      - monitoring-network
+      - agents-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8081/service/rest/v1/status || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 20
+      start_period: 300s
+    deploy:
+      resources:
+        limits:
+          cpus: "${NEXUS_CPU_LIMIT}"
+          memory: ${NEXUS_MEM_LIMIT}
+        reservations:
+          memory: 3g
+
+  # ===========================================================================
+  # Secrets — HashiCorp Vault, raft storage, never dev-mode (D-09)
+  # Init/unseal procedure: scripts/bootstrap.sh post-start instructions.
+  # ===========================================================================
+  vault:
+    image: hashicorp/vault:${VAULT_VERSION}
+    profiles: ["core", "all"]
+    restart: unless-stopped
+    <<: *hardened
+    logging: *default-logging
+    command: ["vault", "server", "-config=/vault/config/vault.hcl"]
+    cap_add:
+      - IPC_LOCK
+    environment:
+      VAULT_ADDR: http://127.0.0.1:8200
+      VAULT_API_ADDR: http://vault:8200
+      SKIP_SETCAP: "1"
+    volumes:
+      - ./vault/config:/vault/config:ro
+      - ${DATA_ROOT}/vault/file:/vault/file
+    networks:
+      - frontend-network
+      - security-network
+      - management-network
+      - monitoring-network
+      - agents-network
+    healthcheck:
+      # Sealed/uninitialized must still report "process healthy" (exit 0) so
+      # compose does not restart-loop a sealed Vault: sealedcode/uninitcode=200.
+      test: ["CMD-SHELL", "wget -qO- 'http://127.0.0.1:8200/v1/sys/health?standbyok=true&sealedcode=200&uninitcode=200' >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: "${VAULT_CPU_LIMIT}"
+          memory: ${VAULT_MEM_LIMIT}
+        reservations:
+          memory: 256M
+
+  # ===========================================================================
+  # Monitoring stack (profile: monitoring) — architecture §4.1: monitoring
+  # network is internal; UIs exposed only via Traefik (+ basicauth middleware)
+  # ===========================================================================
+  prometheus:
+    image: prom/prometheus:${PROMETHEUS_VERSION}
+    profiles: ["monitoring", "all"]
+    restart: unless-stopped
+    <<: *hardened
+    logging: *default-logging
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=${PROM_RETENTION_TIME}
+      - --storage.tsdb.retention.size=${PROM_RETENTION_SIZE}
+      - --web.enable-lifecycle
+      - --web.listen-address=0.0.0.0:9090
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/prometheus/rules:/etc/prometheus/rules:ro
+      - ./secrets/prometheus:/etc/prometheus/secrets:ro   # P10: nexus metrics password_file
+      - ${DATA_ROOT}/prometheus-data:/prometheus
+    networks:
+      - monitoring-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9090/-/healthy >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: "${PROMETHEUS_CPU_LIMIT}"
+          memory: ${PROMETHEUS_MEM_LIMIT}
+        reservations:
+          memory: 1g
+
+  alertmanager:
+    image: prom/alertmanager:${ALERTMANAGER_VERSION}
+    profiles: ["monitoring", "all"]
+    restart: unless-stopped
+    <<: *hardened
+    logging: *default-logging
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+      - --web.listen-address=0.0.0.0:9093
+    volumes:
+      - ./monitoring/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - ./secrets/alertmanager:/etc/alertmanager/secrets:ro   # P10: webhook/SMTP *_file secrets
+      - ${DATA_ROOT}/alertmanager-data:/alertmanager
+    networks:
+      - monitoring-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9093/-/healthy >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          cpus: "${ALERTMANAGER_CPU_LIMIT}"
+          memory: ${ALERTMANAGER_MEM_LIMIT}
+        reservations:
+          memory: 64M
+
+  grafana:
+    image: grafana/grafana-oss:${GRAFANA_VERSION}
+    profiles: ["monitoring", "all"]
+    restart: unless-stopped
+    <<: *hardened
+    logging: *default-logging
+    env_file:
+      - ./secrets/grafana.env
+    environment:
+      GF_SERVER_ROOT_URL: https://grafana.${PLATFORM_DOMAIN}
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_NEWS_NEWS_FEED_ENABLED: "false"
+    volumes:
+      - ${DATA_ROOT}/grafana-data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    networks:
+      - frontend-network
+      - monitoring-network
+    depends_on:
+      prometheus:
+        condition: service_healthy
+      loki:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/health >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          cpus: "${GRAFANA_CPU_LIMIT}"
+          memory: ${GRAFANA_MEM_LIMIT}
+        reservations:
+          memory: 256M
+
+  loki:
+    image: grafana/loki:${LOKI_VERSION}
+    profiles: ["monitoring", "all"]
+    restart: unless-stopped
+    <<: *hardened
+    logging: *default-logging
+    command: ["-config.file=/etc/loki/loki-config.yaml"]
+    volumes:
+      - ./monitoring/loki/loki-config.yaml:/etc/loki/loki-config.yaml:ro
+      - ./monitoring/loki/rules:/loki/rules:ro   # P10: file-based ruler alerts (tenant 'fake')
+      - ${DATA_ROOT}/loki-data:/loki
+    networks:
+      - monitoring-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3100/ready | grep -q ready || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 90s
+    deploy:
+      resources:
+        limits:
+          cpus: "${LOKI_CPU_LIMIT}"
+          memory: ${LOKI_MEM_LIMIT}
+        reservations:
+          memory: 512M
+
+  alloy:
+    image: grafana/alloy:${ALLOY_VERSION}
+    profiles: ["monitoring", "all"]
+    restart: unless-stopped
+    <<: *hardened
+    logging: *default-logging
+    command:
+      - run
+      - /etc/alloy/config.alloy
+      - --storage.path=/var/lib/alloy/data
+      - --server.http.listen-addr=0.0.0.0:12345
+    volumes:
+      - ./monitoring/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - ${DATA_ROOT}/alloy-data:/var/lib/alloy/data
+      - ${DATA_ROOT}/vault/file:/var/log/vault-file:ro   # P11: tails vault audit.log → Loki (service=vault-audit)
+    networks:
+      - monitoring-network
+      - cicd-network
+    depends_on:
+      loki:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:12345/-/healthy >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: "${ALLOY_CPU_LIMIT}"
+          memory: ${ALLOY_MEM_LIMIT}
+        reservations:
+          memory: 256M
+
+  node-exporter:
+    image: prom/node-exporter:${NODE_EXPORTER_VERSION}
+    profiles: ["monitoring", "all"]
+    restart: unless-stopped
+    <<: *hardened
+    logging: *default-logging
+    pid: host
+    command:
+      - --path.rootfs=/host
+      - --collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($|/)
+    volumes:
+      - /:/host:ro,rslave
+    networks:
+      - monitoring-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9100/metrics >/dev/null || exit 1"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.2"
+          memory: 128M
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:${CADVISOR_VERSION}
+    profiles: ["monitoring", "all"]
+    restart: unless-stopped
+    <<: *hardened
+    logging: *default-logging
+    command:
+      - --docker_only=true
+      - --housekeeping_interval=15s
+      - --port=8080
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk:/dev/disk:ro
+    devices:
+      - /dev/kmsg
+    networks:
+      - monitoring-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/healthz >/dev/null || exit 1"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
+
+  # ===========================================================================
+  # Build plane (profile: build) — rootless BuildKit + allow-listed socket proxy
+  # (D-04: no unrestricted Docker socket anywhere; no unauthenticated TCP daemon)
+  # ===========================================================================
+  buildkitd:
+    image: moby/buildkit:${BUILDKIT_VERSION}
+    profiles: ["build", "all"]
+    restart: unless-stopped
+    logging: *default-logging
+    command:
+      - --addr
+      - tcp://0.0.0.0:1234
+      - --root
+      - /home/user/.local/share/buildkit
+    # Rootless BuildKit requires unconfined seccomp/apparmor (documented
+    # trade-off, architecture §7.3/D-04): isolated networks, no host mounts
+    # except its own cache directory, no privileged mode.
+    security_opt:
+      - seccomp=unconfined
+      - apparmor=unconfined
+    volumes:
+      - ${DATA_ROOT}/buildkit-cache:/home/user/.local/share/buildkit
+    networks:
+      - cicd-network
+      - artifact-network
+      - agents-network
+    healthcheck:
+      test: ["CMD", "buildctl", "debug", "workers"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: "${BUILDKIT_CPU_LIMIT}"
+          memory: ${BUILDKIT_MEM_LIMIT}
+        reservations:
+          memory: 2g
+
+  docker-socket-proxy:
+    image: ghcr.io/tecnativa/docker-socket-proxy:${SOCKET_PROXY_VERSION}
+    profiles: ["build", "all"]
+    restart: unless-stopped
+    <<: *hardened
+    logging: *default-logging
+    read_only: true
+    cap_drop:
+      - ALL
+    environment:
+      # Allow-list: only what the Jenkins Docker Cloud plugin needs to manage
+      # ephemeral agent containers (Phase 3). Everything else denied.
+      LOG_LEVEL: warning
+      CONTAINERS: "1"
+      IMAGES: "1"
+      NETWORKS: "1"
+      VOLUMES: "1"
+      INFO: "1"
+      VERSION: "1"
+      PING: "1"
+      POST: "1"
+      AUTH: "0"
+      SECRETS: "0"
+      EXEC: "0"
+      SWARM: "0"
+      SYSTEM: "0"
+      EVENTS: "0"
+      SESSION: "0"
+      BUILDER: "0"
+      GRPC: "0"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - cicd-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:2375/version >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.2"
+          memory: 64M
+
+  # ===========================================================================
+  # Backup runner (profile: backup) — basic consistent file-level restic backup
+  # of DATA_ROOT. Component-native dumps (gitlab-backup, pg_dump, vault raft
+  # snapshot, Nexus task) are added in Phase 11 per architecture §12.
+  # ===========================================================================
+  backup:
+    image: restic/restic:${RESTIC_VERSION}
+    profiles: ["backup", "all"]
+    restart: unless-stopped
+    <<: *hardened
+    logging: *default-logging
+    entrypoint: ["/scripts/backup-runner.sh"]
+    environment:
+      RESTIC_REPOSITORY: ${RESTIC_REPOSITORY_LOCAL}
+      RESTIC_PASSWORD_FILE: /run/secrets/restic_password
+      BACKUP_INTERVAL_HOURS: "${BACKUP_INTERVAL_HOURS}"
+      BACKUP_EXCLUDES: /data/buildkit-cache,/data/agent-workspaces,/data/docker
+      BACKUP_KEEP_DAILY: "7"
+      BACKUP_KEEP_WEEKLY: "4"
+      BACKUP_KEEP_MONTHLY: "6"
+    volumes:
+      - ./scripts/backup-runner.sh:/scripts/backup-runner.sh:ro
+      - ./secrets/restic_password:/run/secrets/restic_password:ro
+      - ${DATA_ROOT}:/data:ro
+      - ${DATA_ROOT}/backups:/backups
+    networks:
+      - management-network
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 1g
+        reservations:
+          memory: 256M
+
+# =============================================================================
+# Named volumes — dependency caches shared between warm and dynamic agents
+# (dynamic agents mount them via dockerTemplateBase.volumesFromString using
+# the compose-prefixed names: devsecops-platform_<volume>).
+# =============================================================================
+volumes:
+  m2-cache:
+    name: devsecops-platform_m2-cache
+  gradle-cache:
+    name: devsecops-platform_gradle-cache
+  npm-cache:
+    name: devsecops-platform_npm-cache
+  pip-cache:
+    name: devsecops-platform_pip-cache
+  nuget-cache:
+    name: devsecops-platform_nuget-cache
+  trivy-cache:
+    name: devsecops-platform_trivy-cache

@@ -1,0 +1,12 @@
+# Keep image build contexts (Phase 3: jenkins/, agents/) minimal and secret-free
+.git
+.gitignore
+.env
+secrets/
+backups/
+documentation/
+*.md
+reverse-proxy/certificates/*.key
+reverse-proxy/certificates/*.crt
+**/*.log
+**/tmp/

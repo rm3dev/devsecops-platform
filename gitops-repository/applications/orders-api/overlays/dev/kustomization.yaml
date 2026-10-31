@@ -1,0 +1,31 @@
+# orders-api — DEV overlay (digest pinned by CI: updateGitOps / promoteDigest)
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: orders-api-dev
+resources:
+  - ../../base
+
+# Argo Rollouts: teach the `replicas:` transformer the Rollout kind (see
+# replicas-config.yaml (this directory) — kustomize built-ins cover
+# Deployment/StatefulSet/ReplicaSet/RC only)
+configurations:
+  - replicas-config.yaml
+labels:
+  - pairs:
+      environment: dev
+      tier: nonprod
+# Immutable deployment identity — updateGitOps rewrites `digest:` per build.
+images:
+  - name: registry.devsecops.internal/orders/orders-api
+    digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+replicas:
+  - name: orders-api
+    count: 1
+patches:
+  - patch: |-
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: orders-api-config
+      data:
+        LOG_LEVEL: debug

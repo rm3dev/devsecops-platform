@@ -1,0 +1,77 @@
+// =============================================================================
+// Grafana Alloy (Phase 2) — centralized container log collection into Loki.
+// Docker API access goes through the allow-listed docker-socket-proxy
+// (cicd-network), never the raw host socket (architecture D-04).
+// Alloy is the supported successor to Promtail (architecture D-10).
+// =============================================================================
+
+// Discover all containers via the socket proxy (GET /containers + events)
+discovery.docker "platform" {
+	host = "http://docker-socket-proxy:2375"
+}
+
+// Map Docker metadata onto Loki labels
+discovery.relabel "platform" {
+	targets = discovery.docker.platform.targets
+
+	rule {
+		source_labels = ["__meta_docker_container_name"]
+		regex         = "/(.*)"
+		target_label  = "container"
+	}
+
+	rule {
+		source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+		target_label  = "service"
+	}
+
+	rule {
+		source_labels = ["__meta_docker_container_label_com_docker_compose_project"]
+		target_label  = "project"
+	}
+}
+
+// Phase 10 (D-35): drop healthcheck/ping noise BEFORE it reaches Loki —
+// compose healthchecks poll every 30s per container and would otherwise
+// dominate ingestion and pollute error-rate log alerts. Everything else is
+// shipped as-is (stream labels from discovery.relabel above).
+loki.process "platform" {
+	forward_to = [loki.write.loki.receiver]
+
+	stage.drop {
+		expression = "/-/healthy|/-/ready|/api/health|/healthz|/-/ping|GET /login HTTP"
+	}
+
+	stage.drop {
+		expression = "wget -qO-|curl -fsS http://localhost"
+	}
+}
+
+// Stream labels (container, service, project) are already attached by
+// discovery.relabel above and are carried through to Loki as-is.
+loki.source.docker "platform" {
+	host       = "http://docker-socket-proxy:2375"
+	targets    = discovery.relabel.platform.output
+	forward_to = [loki.process.platform.receiver]
+}
+
+loki.write "loki" {
+	endpoint {
+		url = "http://loki:3100/loki/api/v1/push"
+
+		queue_config {
+			max_backoff = "10s" // Alloy durations are STRINGS (latent P2 bug caught by `alloy fmt` in P10)
+		}
+	}
+}
+
+// Phase 11: Vault AUDIT log tail (vault/scripts/60-audit-enable.sh writes
+// /vault/file/audit.log; mounted ro at /var/log/vault-file). Audit entries
+// HMAC-hash every token, so shipping them to Loki is safe. Separate stream
+// label (service="vault-audit") keeps container logs and audit queries apart.
+// Missing file = audit not yet enabled: Alloy logs a warning and retries —
+// enabling the audit device makes the stream appear without a restart.
+loki.source.file "vault_audit" {
+	targets    = [{__path__ = "/var/log/vault-file/audit.log", service = "vault-audit"}]
+	forward_to = [loki.write.loki.receiver]
+}

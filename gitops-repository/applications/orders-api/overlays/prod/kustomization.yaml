@@ -1,0 +1,84 @@
+# orders-api — PROD overlay (digest arrives via promotion: prod ← uat).
+# Prod changes to THIS FILE require MR review (CODEOWNERS + protected main).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: orders-api-prod
+
+resources:
+  - ../../base
+
+# Argo Rollouts: teach the `replicas:` transformer the Rollout kind (see
+# replicas-config.yaml (this directory) — kustomize built-ins cover
+# Deployment/StatefulSet/ReplicaSet/RC only)
+configurations:
+  - replicas-config.yaml
+
+labels:
+  - pairs:
+      environment: prod
+      tier: production
+
+images:
+  - name: registry.devsecops.internal/orders/orders-api
+    digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+
+replicas:
+  - name: orders-api
+    count: 3
+
+patches:
+  - patch: |-
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: orders-api-config
+      data:
+        LOG_LEVEL: warn
+  - patch: |-
+      apiVersion: policy/v1
+      kind: PodDisruptionBudget
+      metadata:
+        name: orders-api
+      spec:
+        minAvailable: 2
+  # JSON6902 ops on purpose: Rollout is a CRD, so kustomize patches it with
+  # JSON-MERGE semantics — a strategic-style `containers:` patch would REPLACE
+  # the whole list (dropping image/probes). Scalar/map patches (steps, PDB,
+  # ConfigMap data) merge fine; pod-template LIST edits must be explicit ops.
+  - target:
+      kind: Rollout
+      name: orders-api
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/resources
+        value:
+          requests: { cpu: 250m, memory: 512Mi }
+          limits:   { memory: 1Gi }
+      - op: add
+        path: /spec/template/spec/affinity
+        value:
+          podAntiAffinity:
+            preferredDuringSchedulingIgnoredDuringExecution:
+              - weight: 100
+                podAffinityTerm:
+                  topologyKey: kubernetes.io/hostname
+                  labelSelector:
+                    matchLabels:
+                      app: orders-api
+  - patch: |-
+      apiVersion: argoproj.io/v1alpha1
+      kind: Rollout
+      metadata:
+        name: orders-api
+      spec:
+        strategy:
+          canary:
+            steps:
+              - setWeight: 10
+              - pause: { duration: 2m }
+              - setWeight: 30
+              - pause: { duration: 2m }
+              - setWeight: 60
+              - pause: { duration: 2m }
+              - setWeight: 100

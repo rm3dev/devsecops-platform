@@ -1,0 +1,13 @@
+# =============================================================================
+# orders-api — kustomize base.
+#
+# manifests.yaml is RENDERED OUTPUT — generated from
+#   helm-charts/microservice-standard + applications/orders-api/values.yaml
+# by the CI step `updateGitOps` (or ./scripts/render-app.sh orders-api).
+# Change the chart or values.yaml, never manifests.yaml by hand.
+# =============================================================================
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - manifests.yaml

@@ -1,0 +1,50 @@
+# orders-api — UAT overlay (digest arrives via promotion: uat ← qa)
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: orders-api-uat
+
+resources:
+  - ../../base
+
+# Argo Rollouts: teach the `replicas:` transformer the Rollout kind (see
+# replicas-config.yaml (this directory) — kustomize built-ins cover
+# Deployment/StatefulSet/ReplicaSet/RC only)
+configurations:
+  - replicas-config.yaml
+
+labels:
+  - pairs:
+      environment: uat
+      tier: nonprod
+
+images:
+  - name: registry.devsecops.internal/orders/orders-api
+    digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+
+replicas:
+  - name: orders-api
+    count: 2
+
+patches:
+  - patch: |-
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: orders-api-config
+      data:
+        LOG_LEVEL: info
+  - patch: |-
+      apiVersion: argoproj.io/v1alpha1
+      kind: Rollout
+      metadata:
+        name: orders-api
+      spec:
+        strategy:
+          canary:
+            steps:
+              - setWeight: 25
+              - pause: { duration: 30s }
+              - setWeight: 50
+              - pause: { duration: 30s }
+              - setWeight: 100

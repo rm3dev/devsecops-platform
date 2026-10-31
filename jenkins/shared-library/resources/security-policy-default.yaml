@@ -1,0 +1,51 @@
+# =============================================================================
+# Organization security policy (master spec §10) — the DEFAULT layer.
+# Loaded by SecurityPolicy.load() on every pipeline run; merged with the
+# validated (tighten-only) project override from devsecops.yaml.
+#
+# Phase 7 adds the enforcement wiring (Trivy/Semgrep/Gitleaks result parsers)
+# and the org-wide exception register under security/policies/exceptions/.
+# The CONTRACT below is final from Phase 3 onward:
+#   * block_on_* flags gate the pipeline (true = fail the build)
+#   * exceptions require id, tool, owner, justification, approvedBy, expires
+#   * expired exceptions are ignored (findings gate again) and logged
+# =============================================================================
+security:
+  secrets:
+    enabled: true
+    block_on_detection: true        # ANY confirmed secret blocks (gitleaks)
+
+  sast:
+    enabled: true                   # semgrep
+    block_on_critical: true
+    block_on_high: true
+    block_on_medium: false          # report only
+    block_on_low: false
+
+  dependencies:
+    enabled: true                   # trivy fs + OWASP dependency-check supplement
+    block_on_critical: true
+    block_on_high: true
+    block_on_medium: false
+    block_on_low: false
+
+  container:
+    enabled: true                   # trivy image (OS + app deps + misconfig)
+    block_on_critical: true
+    block_on_high: true
+    block_on_medium: false
+    block_on_low: false
+    ignore_unfixed: false           # never silently ignore; unfixed = reported
+
+  sbom:
+    required: true                  # syft CycloneDX + SPDX archived every build
+
+  signing:
+    required: true                  # cosign signature on every published digest
+
+  exceptions:
+    require_owner: true
+    require_justification: true
+    require_approval: true
+    require_expiry: true
+    register_path: security-exceptions.yaml   # relative to service path

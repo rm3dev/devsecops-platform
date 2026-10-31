@@ -1,0 +1,56 @@
+{{- if .Values.rollout.enabled }}
+{{- /*
+Progressive delivery (Phase 9, D-30): an Argo Rollouts Rollout REPLACES the
+Deployment (same pod template via the shared helper — identical hardening,
+probes, digest-pinned image). Strategy is app-level (values.yaml) and
+environment-tunable: overlays patch spec.strategy.canary.steps (JSON-merge
+replaces the steps list wholesale).
+
+Overlay notes: rollout-enabled apps include a per-overlay replicas-config.yaml
+via `configurations:` (teaches the replicas transformer the Rollout kind), and
+pod-template LIST patches must be JSON6902 ops (CRD = JSON-merge semantics;
+see applications/orders-api/overlays/prod).
+
+Kyverno coverage is unchanged: verify-image-signature / require-digest-pinning
+match Pods, and Rollouts create pods through ReplicaSets → admission applies.
+ArgoCD knows the Rollout health natively (built-in argoproj health checks).
+*/ -}}
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: {{ include "microservice-standard.name" . }}
+  labels:
+    {{- include "microservice-standard.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  revisionHistoryLimit: {{ .Values.revisionHistoryLimit }}
+  selector:
+    matchLabels:
+      {{- include "microservice-standard.selectorLabels" . | nindent 6 }}
+  {{- if eq .Values.rollout.strategy "blueGreen" }}
+  strategy:
+    blueGreen:
+      activeService: {{ include "microservice-standard.name" . }}
+      {{- if .Values.rollout.blueGreen.previewServiceEnabled }}
+      previewService: {{ include "microservice-standard.name" . }}-preview
+      {{- end }}
+      autoPromotionEnabled: {{ .Values.rollout.blueGreen.autoPromotionEnabled }}
+      scaleDownDelaySeconds: {{ .Values.rollout.blueGreen.scaleDownDelaySeconds }}
+      {{- with .Values.rollout.blueGreen.extra }}
+      {{- toYaml . | nindent 6 }}
+      {{- end }}
+  {{- else }}
+  strategy:
+    canary:
+      {{- with .Values.rollout.canary.maxSurge }}
+      maxSurge: {{ . }}
+      {{- end }}
+      {{- with .Values.rollout.canary.maxUnavailable }}
+      maxUnavailable: {{ . }}
+      {{- end }}
+      steps:
+        {{- toYaml .Values.rollout.canary.steps | nindent 8 }}
+  {{- end }}
+  template:
+    {{- include "microservice-standard.podTemplate" . | nindent 4 }}
+{{- end }}

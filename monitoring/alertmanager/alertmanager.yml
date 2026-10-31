@@ -1,0 +1,91 @@
+# =============================================================================
+# Alertmanager (Phase 10, D-34) — real receivers with FILE-based secrets.
+#
+# Secret files live in ./secrets/alertmanager/ on the host, mounted read-only
+# at /etc/alertmanager/secrets/. They are ALWAYS present (bootstrap.sh writes
+# parse-safe placeholders), because Alertmanager validates *_file contents at
+# config load — a missing/garbage file would stop the container. Placeholders
+# are URL/host-shaped: config loads, delivery fails per-alert (logged), the
+# process stays healthy. monitoring/scripts/20-configure-notifications.sh
+# replaces them with real values, adjusts smarthost/from/to below via yq,
+# and reloads with SIGHUP (no restart needed).
+#
+# Routing: severity=none (Watchdog heartbeat) → sink; critical → oncall-critical
+# (Slack + Teams + email, 1h repeat); everything else → platform-default
+# (Slack + email, 12h repeat). Loki ruler log-alerts arrive on the same routes.
+# =============================================================================
+
+global:
+  resolve_timeout: 5m
+  smtp_smarthost: "smtp.invalid:587"        # set by 20-configure-notifications.sh
+  smtp_from: "devsecops-platform@invalid"   # set by 20-configure-notifications.sh
+  smtp_require_tls: true
+
+templates: []
+
+route:
+  receiver: platform-default
+  group_by: ["alertname", "severity"]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 12h
+  routes:
+    # Watchdog heartbeat (always firing, expr vector(1)) — dead-man's switch
+    # for the whole alerting path; consumed by nothing inside the platform.
+    - matchers:
+        - severity = "none"
+      receiver: watchdog-sink
+      group_wait: 0s
+      group_interval: 5m
+      repeat_interval: 5m
+    - matchers:
+        - severity = "critical"
+      receiver: oncall-critical
+      group_wait: 10s
+      repeat_interval: 1h
+
+inhibit_rules:
+  # A critical for the same alert/instance silences its warning twin…
+  - source_matchers: [severity = "critical"]
+    target_matchers: [severity = "warning"]
+    equal: ["alertname", "instance"]
+  # …and a platform-wide availability fast-burn silences per-target noise.
+  - source_matchers: [alertname = "SLOPlatformAvailabilityFastBurn"]
+    target_matchers: [alertname = "TargetDown"]
+    equal: []
+
+receivers:
+  - name: watchdog-sink        # intentional no-op receiver (heartbeat terminus)
+
+  - name: platform-default
+    slack_configs:
+      - api_url_file: /etc/alertmanager/secrets/slack_webhook_url
+        send_resolved: true
+        title: '[{{ .Status | toUpper }}] {{ .CommonLabels.alertname }}'
+        text: >-
+          {{ range .Alerts }}*{{ .Labels.severity }}* — {{ .Annotations.summary }}
+          {{ if .Annotations.description }}{{ .Annotations.description }}{{ end }}
+          {{ end }}
+    email_configs:
+      - to: "devsecops-team@invalid"         # set by 20-configure-notifications.sh
+        auth_username: "SET_IN_PHASE_10"     # NOT a secret → inline; script sets it
+        auth_password_file: /etc/alertmanager/secrets/smtp_password
+        send_resolved: true
+
+  - name: oncall-critical
+    slack_configs:
+      - api_url_file: /etc/alertmanager/secrets/slack_webhook_url
+        send_resolved: true
+        title: ':rotating_light: [{{ .Status | toUpper }}] {{ .CommonLabels.alertname }}'
+        text: >-
+          {{ range .Alerts }}*{{ .Labels.severity }}* — {{ .Annotations.summary }}
+          {{ if .Annotations.description }}{{ .Annotations.description }}{{ end }}
+          {{ end }}
+    msteams_configs:
+      - webhook_url_file: /etc/alertmanager/secrets/teams_webhook_url
+        send_resolved: true
+    email_configs:
+      - to: "devsecops-oncall@invalid"       # set by 20-configure-notifications.sh
+        auth_username: "SET_IN_PHASE_10"     # NOT a secret → inline; script sets it
+        auth_password_file: /etc/alertmanager/secrets/smtp_password
+        send_resolved: true

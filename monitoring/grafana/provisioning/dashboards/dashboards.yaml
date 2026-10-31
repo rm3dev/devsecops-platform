@@ -1,0 +1,16 @@
+# Dashboard provisioning (Phase 2 wired the provider; Phase 10 delivered the
+# dashboards into monitoring/grafana/dashboards/: platform-overview (SLOs),
+# cicd-pipeline, infrastructure, security-vault, logs-platform).
+apiVersion: 1
+
+providers:
+  - name: devsecops-platform
+    orgId: 1
+    folder: DevSecOps
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 60
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false

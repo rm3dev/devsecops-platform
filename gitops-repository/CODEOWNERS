@@ -1,0 +1,10 @@
+# CODEOWNERS — enforcement activates with a Premium license (D-19); maintained
+# from day one so review routing is ready. Replace @root with real groups:
+#   @devsecops/platform-engineers   (chart, clusters, all overlays)
+#   @devsecops/release-managers     (prod overlays)
+#   @teams/orders                   (applications/orders-api/**)
+* @root
+/helm-charts/ @root
+/clusters/ @root
+/applications/*/overlays/prod/ @root
+/scripts/ @root

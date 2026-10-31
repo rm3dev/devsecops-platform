@@ -1,0 +1,128 @@
+# =============================================================================
+# CI/CD platform alert rules (Phase 10). Metric names are restricted to the
+# documented, stable series of each exporter:
+#   jenkins    → jenkins-prometheus-plugin (queue/executor/node gauges,
+#                job_scheduled_total counter, building_duration summary)
+#   gitlab     → gitlab_exporter (sidekiq_queue_size, ruby_memory_bytes)
+#   vault      → sys/metrics prometheus format (core_unsealed, expire_num_leases)
+#   nexus/loki/alloy/traefik → up{} + component-native counters
+# Availability SLOs live in slo.yml; host/container baselines in platform.yml.
+# =============================================================================
+groups:
+  - name: cicd-jenkins
+    rules:
+      - alert: JenkinsQueueBacklog
+        expr: jenkins_queue_size_value > 10
+        for: 15m
+        labels:
+          severity: warning
+          component: jenkins
+        annotations:
+          summary: "Jenkins build queue backlog: {{ $value }} items for 15m"
+          description: "Queued builds are not being dispatched — check agent pool health (Docker cloud / warm nodes) and executor limits."
+
+      - alert: JenkinsExecutorsExhausted
+        expr: jenkins_executor_available_value == 0 and jenkins_executor_in_use_value > 0
+        for: 30m
+        labels:
+          severity: warning
+          component: jenkins
+        annotations:
+          summary: "All Jenkins executors busy for 30m ({{ $labels.instance }})"
+
+      - alert: JenkinsAgentsOffline
+        expr: jenkins_node_offline_value > 0
+        for: 10m
+        labels:
+          severity: critical
+          component: jenkins
+        annotations:
+          summary: "{{ $value }} Jenkins agent(s) offline for 10m"
+          description: "Warm-pool or cloud agents unreachable — builds will queue. Check agent containers and the agents-network."
+
+      - alert: JenkinsBuildsStalled
+        expr: |
+          jenkins_job_building_duration_seconds{quantile="0.99"} > 3600
+        for: 10m
+        labels:
+          severity: warning
+          component: jenkins
+        annotations:
+          summary: "p99 running-build duration exceeds 1h — possible stuck builds"
+
+      - alert: JenkinsNoBuildsScheduled
+        # A silent controller on a weekday platform is an outage signal:
+        # zero scheduled builds for 6h while the controller is up.
+        expr: |
+          increase(jenkins_job_scheduled_total[6h]) == 0 and up{job="jenkins"} == 1
+        for: 0m
+        labels:
+          severity: warning
+          component: jenkins
+        annotations:
+          summary: "No Jenkins builds scheduled in 6h — webhook/trigger path may be broken"
+
+  - name: cicd-gitlab
+    rules:
+      - alert: GitLabSidekiqBacklog
+        expr: sum(sidekiq_queue_size) > 100
+        for: 15m
+        labels:
+          severity: warning
+          component: gitlab
+        annotations:
+          summary: "GitLab Sidekiq backlog: {{ $value }} queued jobs (webhooks/pipelines delayed)"
+
+      - alert: GitLabRubyMemoryHigh
+        expr: max(ruby_memory_bytes) > 1.5e9
+        for: 15m
+        labels:
+          severity: warning
+          component: gitlab
+        annotations:
+          summary: "GitLab ruby process ({{ $labels.process }}) RSS > 1.5 GB for 15m"
+
+  - name: cicd-vault
+    rules:
+      - alert: VaultSealed
+        expr: vault_core_unsealed == 0
+        for: 2m
+        labels:
+          severity: critical
+          component: vault
+        annotations:
+          summary: "Vault is SEALED — ESO secret sync, cosign keys and every dependent pipeline stage are down"
+          description: "Unseal with 3 of 5 key shares: docker compose exec vault vault operator unseal (full DR runbook: documentation/backup-recovery.md §4)."
+
+      - alert: VaultLeaseExplosion
+        expr: vault_expire_num_leases > 5000
+        for: 15m
+        labels:
+          severity: warning
+          component: vault
+        annotations:
+          summary: "Vault lease count {{ $value }} — possible token/secret leak or TTL misconfiguration"
+
+  - name: cicd-artifacts
+    rules:
+      - alert: NexusMetricsAuthFailing
+        # The metrics account is the platform's canary for Nexus auth health:
+        # a 401 here means credentials broke (rotation, lockdown regression).
+        expr: scrape_series_added{job="nexus"} == 0 and up{job="nexus"} == 0
+        for: 15m
+        labels:
+          severity: warning
+          component: nexus
+        annotations:
+          summary: "Nexus metrics scrape failing for 15m — check the 'metrics' account (monitoring/scripts/10-enable-nexus-metrics.sh)"
+
+      - alert: LokiIngestionStalled
+        expr: |
+          sum(rate(loki_distributor_lines_received_total[10m])) < 1
+            and up{job="loki"} == 1 and up{job="alloy"} == 1
+        for: 30m
+        labels:
+          severity: warning
+          component: loki
+        annotations:
+          summary: "Loki received ~0 log lines in 30m while Alloy is up — collection pipeline stalled"

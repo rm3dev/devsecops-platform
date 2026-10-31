@@ -1,0 +1,156 @@
+# =============================================================================
+# Platform pipeline configuration (organization layer) — Phase 3
+#
+# Stage flags are the incremental-enablement contract: each delivery phase
+# flips its flags here (single commit, all repositories benefit instantly).
+# Projects may override ONLY within allowed limits (devsecops.yaml per repo,
+# validated by PlatformConfig.validateOverrides — tighten-only for security).
+# =============================================================================
+
+supportedLanguages: [python, java, dotnet, nodejs]
+deploymentTypes: [helm, kustomize]
+environments: [dev, qa, uat, prod]
+
+# --- pipeline stage enablement ------------------------------------------------
+stages:
+  checkout:          { enabled: true }
+  discovery:         { enabled: true }
+  preBuildSecurity:  { enabled: true }
+  build:             { enabled: true }
+  unitTests:         { enabled: true }
+  integrationTests:  { enabled: true }
+  quality:           { enabled: true }
+  sast:              { enabled: true }
+  dependencyScan:    { enabled: true }
+  secrets:           { enabled: true }
+  package:           { enabled: true }
+  imageBuild:        { enabled: true }
+  imageScan:         { enabled: true }
+  sbom:              { enabled: true }
+  sign:              { enabled: true }
+  publish:           { enabled: true }
+  gitops:            { enabled: true }
+  sync:              { enabled: true }
+  verify:            { enabled: true }
+  postDeploy:        { enabled: true }
+  report:            { enabled: true }
+
+# --- agents --------------------------------------------------------------------
+# warm pool: general, python, security (always on)
+# dynamic (Docker cloud): java-maven, java-gradle, dotnet, node
+agentLabels:
+  python: python
+  java-maven: java-maven
+  java-gradle: java-gradle
+  dotnet: dotnet
+  nodejs: node
+  general: general
+  security: security
+
+concurrency:
+  maxParallelServices: 5      # monorepo parallel builds (master spec §7)
+  maxDynamicAgents: 20        # Docker cloud containerCap
+
+# --- SonarQube (Phase 5, decision D-20) ---------------------------------------
+# Gate enforcement is scanner-side (sonar.qualitygate.wait=true) so it works on
+# Community Build regardless of webhook support; the global webhook created by
+# sonarqube/scripts/10-admin-bootstrap.sh is a notification bonus.
+# runSonarAnalysis isolates non-main branches into separate project keys
+# (Community Build has no branch/MR analysis).
+sonar:
+  serverName: SonarQube           # JCasC sonarGlobalConfiguration installation name
+  qualityGateTimeoutSec: 600      # Compute-Engine wait cap per analysis
+
+# --- Nexus dependency/publish endpoints (Phase 5/6, D-16: only upstream) ------
+# RepoConfig writes per-build settings/init/npmrc/nuget.config pointing here.
+nexus:
+  baseUrl: "http://nexus:8081"
+  repositories:
+    mavenPublic:    maven-public
+    mavenReleases:  maven-releases
+    mavenSnapshots: maven-snapshots
+    npmPublic:      npm-public
+    npmHosted:      npm-hosted
+    pypiPublic:     pypi-public
+    pypiHosted:     pypi-hosted
+    nugetPublic:    nuget-public
+    nugetHosted:    nuget-hosted
+    rawHosted:      raw-hosted
+
+# --- Container registry (D-23) -------------------------------------------------
+# buildContainer pushes registry.<PLATFORM_DOMAIN>/<team>/<service>:<branch>-<sha9>-<build>
+# through Traefik (TLS) → Nexus docker-group connector :8085 → docker-hosted.
+# Rootless BuildKit daemon (profile 'build') on the internal agents network.
+registry:
+  buildkitAddr: "tcp://buildkitd:1234"
+
+# --- Security toolchain (Phase 7, D-24) ----------------------------------------
+# All scanners run on agent-security; findings are normalized and gated by
+# SecurityPolicy + FindingGate (exceptions: security-exceptions.yaml per service).
+security:
+  semgrepRulesDir: /opt/semgrep-rules        # baked offline rulesets (image build time)
+  dependencyCheck:
+    dataDir: /owasp-dc                       # host-updated NVD mirror volume
+  sbom:
+    uploadToRaw: true                        # archive CycloneDX+SPDX to raw-hosted
+  severityMapping:
+    semgrep: { ERROR: high, WARNING: medium, INFO: low }
+
+# --- GitOps (Phase 8, D-26/D-27) ----------------------------------------------
+# updateGitOps renders helm-charts/microservice-standard with the app's values,
+# pins the built DIGEST into applications/<svc>/overlays/<env> and pushes main
+# (render & commit — git shows exactly what ArgoCD applies). deployApplication
+# then asks ArgoCD to sync and waits for health; Jenkins itself holds only the
+# jenkins-cd API token (applications get/sync in dev|qa|uat|prod — nothing else).
+# qa/uat/prod receive digests via promoteDigest (platform/gitops-promotion job).
+gitops:
+  repoUrlInternal: "http://gitlab/platform/gitops-repository.git"  # agent-side clone (agents-network DNS)
+  branch: main
+  chartPath: helm-charts/microservice-standard
+  defaultEnvironment: dev      # builds deploy to dev; higher envs are promotion-only
+  syncTimeoutSec: 600          # argocd app wait --sync --health cap per service
+  autoRollback: true           # verify/postDeploy failure → re-pin previous digest (D-32)
+
+# --- deployment verification & smoke tests (Phase 9, D-31/D-32) ---------------
+# verifyDeployment: in-cluster ground truth via the READ-ONLY verifier kubeconfig
+# (secrets/k8s.env): workload convergence (Deployment rollout status / Rollout
+# phase=Healthy), readyReplicas, pod-image==signed-digest identity check,
+# pathology scan, ExternalSecret readiness. Bounded canary pauses only —
+# indefinite Paused rollouts fail unless acceptPaused is set.
+verify:
+  timeoutSec: 300
+  acceptPaused: false
+# runPostDeploy: newman (tests/postman/*.postman_collection.json) + k6
+# (tests/k6/*.js) discovered in the service repo, run against BASE_URL —
+# explicit config wins, else kubectl port-forward via the verifier kubeconfig.
+# No tests discovered = LOUD skip (never silent, never failing — D-19).
+postDeploy:
+  baseUrl: ""                  # optional fixed URL (e.g. https://orders-api.apps.<domain>)
+  localPortBase: 18000         # port-forward local port = base + slug-hash (parallel-safe)
+  smokeTimeoutSec: 600
+
+# --- notifications (Phase 10 — wired; channels enable data-driven) -------------
+# monitoring/scripts/20-configure-notifications.sh flips `enabled` per channel
+# as real values land in .env (SMTP_*, SLACK_WEBHOOK_URL, TEAMS_WEBHOOK_URL)
+# and provisions secrets/jenkins-notifications.env (JCasC creds) +
+# secrets/alertmanager/* (Alertmanager *_file receivers — the infra-side path).
+# Dispatch is ALWAYS fail-safe: unprovisioned channels skip with a warn.
+notifications:
+  email:
+    enabled: false             # → true when SMTP_HOST configured (script)
+    to: ""                     # → NOTIFICATION_EMAIL_TO (script)
+  slack:
+    enabled: false             # → true when SLACK_WEBHOOK_URL configured
+    credentialId: slack-webhook-url
+  teams:
+    enabled: false             # → true when TEAMS_WEBHOOK_URL configured
+    credentialId: teams-webhook-url
+
+# --- security policy defaults (organization floor; projects may tighten) ------
+securityPolicyDefaults:
+  secrets:      { enabled: true, block_on_detection: true }
+  sast:         { enabled: true, block_on_critical: true }
+  dependencies: { enabled: true, block_on_critical: true, block_on_high: true }
+  container:    { enabled: true, block_on_critical: true, block_on_high: true }
+  sbom:         { required: true }
+  signing:      { required: true }

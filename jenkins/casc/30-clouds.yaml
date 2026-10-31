@@ -1,0 +1,105 @@
+# =============================================================================
+# JCasC — Docker Cloud for DYNAMIC build agents (Phase 3)
+#
+# Schema verified against docker-plugin 1337.v3ca_fd1b_b_25ef sources
+# (DockerCloud/DockerTemplate/DockerTemplateBase/DockerComputerJNLPConnector).
+#
+# Security model (architecture D-04):
+#   * API access goes through the allow-listed docker-socket-proxy ONLY.
+#   * Connector = JNLP (inbound): containers connect BACK to the controller on
+#     the internal cicd network — no `docker exec` is ever used, so the proxy's
+#     EXEC permission stays DENIED.
+#   * memoryLimit is expressed in MiB (plugin multiplies by 1024*1024).
+#   * All templates attach to the dedicated INTERNAL `devsecops-agents` network
+#     (architecture D-16): dynamic agents have no direct internet egress —
+#     dependencies flow exclusively through Nexus proxy repositories, clones
+#     come from GitLab, builds go to BuildKit, results to SonarQube/Jenkins.
+#     (docker-plugin supports exactly one network per template, hence the
+#     dedicated network instead of reusing cicd/artifact.)
+#
+# Warm pool (40-nodes.yaml): general, python, security.
+# Dynamic templates below: java-maven, java-gradle, dotnet, nodejs.
+# Images are built by scripts/build-images.sh; tag comes from AGENT_IMAGE_TAG.
+# =============================================================================
+jenkins:
+  clouds:
+    - docker:
+        name: "docker-agents"
+        containerCap: 20
+        dockerApi:
+          dockerHost:
+            uri: "http://docker-socket-proxy:2375"
+          connectTimeout: 15
+          readTimeout: 60
+        templates:
+          - name: "dyn-java-maven"
+            labelString: "java maven java-maven dynamic"
+            mode: EXCLUSIVE
+            remoteFs: "/home/jenkins/agent"
+            instanceCapStr: "6"
+            pullTimeout: 300
+            connector:
+              jnlp:
+                jenkinsUrl: "http://jenkins:8080/"
+                user: "1000"
+            dockerTemplateBase:
+              image: "devsecops/agent-java-maven:${AGENT_IMAGE_TAG}"
+              network: "devsecops-agents"
+              memoryLimit: 6144
+              cpus: "4"
+              environmentsString: "TZ=UTC\nMAVEN_OPTS=-Dmaven.repo.local=/home/jenkins/.m2/repository"
+              volumesFromString: "devsecops-platform_m2-cache:/home/jenkins/.m2"
+
+          - name: "dyn-java-gradle"
+            labelString: "java gradle java-gradle dynamic"
+            mode: EXCLUSIVE
+            remoteFs: "/home/jenkins/agent"
+            instanceCapStr: "6"
+            pullTimeout: 300
+            connector:
+              jnlp:
+                jenkinsUrl: "http://jenkins:8080/"
+                user: "1000"
+            dockerTemplateBase:
+              image: "devsecops/agent-java-gradle:${AGENT_IMAGE_TAG}"
+              network: "devsecops-agents"
+              memoryLimit: 6144
+              cpus: "4"
+              environmentsString: "TZ=UTC\nGRADLE_USER_HOME=/home/jenkins/.gradle"
+              volumesFromString: "devsecops-platform_gradle-cache:/home/jenkins/.gradle"
+
+          - name: "dyn-dotnet"
+            labelString: "dotnet dynamic"
+            mode: EXCLUSIVE
+            remoteFs: "/home/jenkins/agent"
+            instanceCapStr: "4"
+            pullTimeout: 300
+            connector:
+              jnlp:
+                jenkinsUrl: "http://jenkins:8080/"
+                user: "1000"
+            dockerTemplateBase:
+              image: "devsecops/agent-dotnet:${AGENT_IMAGE_TAG}"
+              network: "devsecops-agents"
+              memoryLimit: 4096
+              cpus: "2"
+              environmentsString: "TZ=UTC\nDOTNET_CLI_TELEMETRY_OPTOUT=1\nDOTNET_NOLOGO=1\nNUGET_PACKAGES=/home/jenkins/.nuget/packages"
+              volumesFromString: "devsecops-platform_nuget-cache:/home/jenkins/.nuget"
+
+          - name: "dyn-nodejs"
+            labelString: "node nodejs dynamic"
+            mode: EXCLUSIVE
+            remoteFs: "/home/jenkins/agent"
+            instanceCapStr: "6"
+            pullTimeout: 300
+            connector:
+              jnlp:
+                jenkinsUrl: "http://jenkins:8080/"
+                user: "1000"
+            dockerTemplateBase:
+              image: "devsecops/agent-nodejs:${AGENT_IMAGE_TAG}"
+              network: "devsecops-agents"
+              memoryLimit: 4096
+              cpus: "2"
+              environmentsString: "TZ=UTC\nnpm_config_cache=/home/jenkins/.npm\nPNPM_HOME=/home/jenkins/.local/share/pnpm"
+              volumesFromString: "devsecops-platform_npm-cache:/home/jenkins/.npm"

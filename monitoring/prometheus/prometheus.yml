@@ -1,0 +1,92 @@
+# =============================================================================
+# Prometheus configuration — control-plane observability (Phase 10).
+# Scrape targets live on the internal monitoring-network ONLY; every service
+# that must be scraped is attached to it in docker-compose.yml (jenkins joined
+# in Phase 10 — before that its job was DNS-unreachable).
+#
+# Target enablement map (what each phase contributed):
+#   jenkins         P3  prometheus plugin (/prometheus/, unauthenticated — JCasC)
+#   gitlab-exporter P10 omnibus gitlab_exporter :9168 (bundled prometheus/grafana
+#                       stay OFF — external scrape only, see compose omnibus cfg)
+#   nexus           P10 metrics capability + least-priv 'metrics' account
+#                       (monitoring/scripts/10-enable-nexus-metrics.sh);
+#                       password_file is provisioned by bootstrap.sh so the
+#                       config ALWAYS loads — a wrong password shows up as a
+#                       scrape 401, never a Prometheus crash
+#   vault           P2  /v1/sys/metrics (telemetry.unauthenticated_metrics_access
+#                       in vault/config/vault.hcl — intentional, internal net)
+#   sonarqube       —   Community Build exposes no metrics API (D-07); if a
+#                       licensed edition lands: /api/monitoring/metrics + bearer
+# =============================================================================
+
+global:
+  scrape_interval: 30s
+  evaluation_interval: 30s
+  external_labels:
+    platform: devsecops-control-plane
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
+
+rule_files:
+  - /etc/prometheus/rules/*.yml
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  - job_name: traefik
+    static_configs:
+      - targets: ["traefik:8082"]
+
+  - job_name: node-exporter
+    static_configs:
+      - targets: ["node-exporter:9100"]
+
+  - job_name: cadvisor
+    static_configs:
+      - targets: ["cadvisor:8080"]
+
+  - job_name: alertmanager
+    static_configs:
+      - targets: ["alertmanager:9093"]
+
+  - job_name: loki
+    static_configs:
+      - targets: ["loki:3100"]
+
+  - job_name: alloy
+    static_configs:
+      - targets: ["alloy:12345"]
+
+  - job_name: vault
+    metrics_path: /v1/sys/metrics
+    params:
+      prometheus-format: ["true"]
+    static_configs:
+      - targets: ["vault:8200"]
+
+  # Jenkins Prometheus plugin (installed P3; jenkins joined monitoring-network P10)
+  - job_name: jenkins
+    metrics_path: /prometheus/
+    static_configs:
+      - targets: ["jenkins:8080"]
+
+  # GitLab built-in exporter (Phase 10): sidekiq queues, ruby process metrics,
+  # puma. Bundled prometheus/grafana/alertmanager inside omnibus stay disabled.
+  - job_name: gitlab-exporter
+    static_configs:
+      - targets: ["gitlab:9168"]
+
+  # Nexus metrics capability (Phase 10) — endpoint requires ANY authenticated
+  # user; dedicated zero-privilege 'metrics' account (see script referenced above)
+  - job_name: nexus
+    metrics_path: /service/metrics/prometheus
+    basic_auth:
+      username: metrics
+      password_file: /etc/prometheus/secrets/nexus_metrics_password
+    static_configs:
+      - targets: ["nexus:8081"]

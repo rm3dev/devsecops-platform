@@ -1,0 +1,45 @@
+{{- if .Values.networkPolicy.enabled }}
+{{- /* Default-deny ingress for this app's pods + explicit allows:
+       own namespace, monitoring namespace (scraping), extras from values.
+       Egress: DNS + (lab default) all; tighten per environment via overlay. */ -}}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "microservice-standard.name" . }}
+  labels:
+    {{- include "microservice-standard.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "microservice-standard.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector: {}          # same namespace
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+        {{- range .Values.networkPolicy.extraIngressNamespaces }}
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ . }}
+        {{- end }}
+      ports:
+        {{- range .Values.ports }}
+        - port: {{ .containerPort }}
+          protocol: {{ .protocol | default "TCP" }}
+        {{- end }}
+  egress:
+    {{- if .Values.networkPolicy.allowAllEgress }}
+    - {}
+    {{- else }}
+    - to: []
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    {{- end }}
+{{- end }}

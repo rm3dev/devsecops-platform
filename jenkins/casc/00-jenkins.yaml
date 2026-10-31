@@ -1,0 +1,23 @@
+# =============================================================================
+# JCasC — Jenkins core (Phase 3)
+# Controller executes NO builds (numExecutors: 0); all work runs on labeled
+# agents (warm pool in 40-nodes.yaml, dynamic via Docker cloud in 30-clouds.yaml).
+# =============================================================================
+jenkins:
+  systemMessage: |
+    DevSecOps Platform — Jenkins LTS controller (JCasC-managed).
+    Configuration is code: edit jenkins/casc/ in the platform repository, never the UI.
+    Builds run exclusively on agents: warm pool [general python security] + dynamic Docker agents.
+  numExecutors: 0
+  labelString: "controller no-builds"
+  mode: EXCLUSIVE
+  quietPeriod: 10
+  scmCheckoutRetryCount: 2
+  slaveAgentPort: 50000
+  disableRememberMe: true
+  # Only the modern, encrypted agent protocol — legacy JNLP1-3 disabled.
+  agentProtocols:
+    - "JNLP4-connect"
+    - "Ping"
+  # Deny anonymous everything; authenticated users get Overall/Read via matrix.
+  noUsageStatistics: true

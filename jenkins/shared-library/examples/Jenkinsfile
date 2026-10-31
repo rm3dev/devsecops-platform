@@ -1,0 +1,12 @@
+// =============================================================================
+// EVERY microservice repository uses exactly this Jenkinsfile (master spec §8).
+// Copy into the repository root; per-service tuning belongs in devsecops.yaml,
+// never in pipeline code.
+// =============================================================================
+@Library('devsecops-shared-library') _
+
+microservicePipeline(
+    serviceName: 'payment-service',
+    deploymentType: 'helm',
+    environments: ['dev', 'qa', 'uat', 'prod']
+)

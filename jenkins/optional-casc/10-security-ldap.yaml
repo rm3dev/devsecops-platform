@@ -1,0 +1,57 @@
+# =============================================================================
+# OPTIONAL JCasC — LDAP security realm (Phase 11, D-38). NOT MOUNTED BY DEFAULT.
+#
+# Cutover (security.md §8):
+#   1. adjust the values below (server URL, bind DN, user/group search bases)
+#   2. docker-compose.override or edit compose jenkins volumes:
+#        - ./jenkins/optional-casc/10-security-ldap.yaml:/var/jenkins_home/casc/10-security.yaml:ro
+#      (replaces the local realm file ONE-FOR-ONE — same mount point, so JCasC
+#       never sees two securityRealm blocks)
+#   3. provide LDAP_MANAGER_PASSWORD in secrets/jenkins.env
+#   4. map the six platform roles to LDAP GROUPS in the authorizationStrategy
+#      (replace `user:` entries with `group:` entries of the same names —
+#       the permission matrix itself is realm-independent, master spec §17)
+#   5. docker compose up -d jenkins
+#
+# The ldap plugin ships with Jenkins core (detached plugin, auto-installed) —
+# no plugins.txt change needed.
+# =============================================================================
+jenkins:
+  securityRealm:
+    ldap:
+      configurations:
+        - server: "${LDAP_URL:-ldaps://ldap.internal.example.com:636}"
+          rootDN: "${LDAP_ROOT_DN:-dc=example,dc=com}"
+          userSearchBase: "${LDAP_USER_BASE:-ou=people}"
+          userSearch: "uid={0}"
+          groupSearchBase: "${LDAP_GROUP_BASE:-ou=groups}"
+          groupSearchFilter: "cn={0}"
+          managerDN: "${LDAP_MANAGER_DN:-cn=jenkins-readonly,ou=service,dc=example,dc=com}"
+          managerPasswordSecret: "${LDAP_MANAGER_PASSWORD:-SET_AT_CUTOVER}"
+          inhibitInferRootDN: false
+      userIdStrategy:
+        caseInsensitive:
+      groupIdStrategy:
+        caseInsensitive:
+      disableMailAddressResolver: false
+      cache:
+        size: 500
+        ttl: 300
+
+  # Authorization matrix is UNCHANGED from casc/10-security.yaml except every
+  # `user:` entry becomes a `group:` entry — create these six groups in LDAP:
+  #   platform-admin, devops-admin, developer, security-engineer,
+  #   release-manager, app-owner   (+ keep the local admin as break-glass:
+  #   jenkins.model.JenkinsLocationConfiguration stays, and the bootstrap
+  #   admin user remains available via `java -jar jenkins-cli.jar` ONLY if
+  #   you keep a localrealm — recommended practice: keep ONE local break-glass
+  #   account via the `jenkins.securityRealm.legacy` init hook or accept
+  #   full LDAP dependency and document the manager-DN recovery path).
+  authorizationStrategy:
+    globalMatrix:
+      entries:
+        - group:
+            name: "platform-admin"
+            permissions: ["Overall/Administer"]
+        # …copy the remaining five role blocks from casc/10-security.yaml,
+        #   changing `user:` → `group:` (identical permission lists).
