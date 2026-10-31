@@ -40,7 +40,12 @@ See `documentation/architecture.md` §19-aligned tree. Highlights:
 - `monitoring/` — Prometheus, Grafana provisioning/dashboards, Loki, Alloy, Alertmanager
 - `scripts/` — bootstrap / validate / health-check / backup / restore / cleanup
 
-## Quick start (Phase 2 — working today)
+## 👉 New here? Start with the guides
+
+- **[GETTING-STARTED.md](documentation/GETTING-STARTED.md)** — the operational manual: clone → configure → run → verify → operate, step by step with checkpoints and troubleshooting
+- **[LEARNING-GUIDE.md](documentation/LEARNING-GUIDE.md)** — a 4-day hands-on bootcamp that teaches DevOps/GitOps concepts *through* this platform (exercises, quizzes, AI prompts)
+
+## Quick start (condensed — full walkthrough in GETTING-STARTED.md)
 
 ```bash
 cp .env.example .env                     # edit PLATFORM_DOMAIN, DATA_ROOT, sizing
