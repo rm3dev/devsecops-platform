@@ -15,9 +15,9 @@ jenkins:
   scmCheckoutRetryCount: 2
   slaveAgentPort: 50000
   disableRememberMe: true
-  # Only the modern, encrypted agent protocol — legacy JNLP1-3 disabled.
-  agentProtocols:
-    - "JNLP4-connect"
-    - "Ping"
+  # NOTE: 'agentProtocols' must NOT be set — the attribute is deprecated and
+  # current JCasC hard-fails boot on deprecated attributes (exit 5). The core
+  # defaults are exactly the hardened set we want: JNLP4-connect + Ping only
+  # (legacy JNLP1-3 were removed from core entirely).
   # Deny anonymous everything; authenticated users get Overall/Read via matrix.
   noUsageStatistics: true
