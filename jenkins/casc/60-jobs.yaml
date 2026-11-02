@@ -41,17 +41,21 @@ jobs:
               description('Auto-discovered multibranch pipelines for GitLab group ' + groupPath + '. Managed as code (jenkins/casc/60-jobs.yaml) — do not edit in the UI.')
 
               organizations {
+                  // DSL names verified against gitlab-branch-source 749.v63a_c68676751
+                  // source (@Symbol annotations). checkoutCredentialsId was REMOVED
+                  // upstream: the single credentialsId (a GitLabApiToken, which IS a
+                  // username/password credential) is used for API calls AND HTTP
+                  // checkout — so gitlab-jenkins-user is no longer referenced here.
                   gitLabSCMNavigator {
                       serverName('gitlab')
                       projectOwner(groupPath)
                       credentialsId('gitlab-branch-source-token')
-                      checkoutCredentialsId('gitlab-jenkins-user')
                       traits {
-                          subGroupProjectDiscoveryTrait()
+                          gitLabSubGroupProjectDiscovery()   // include subgroups of teams/<team>
                           gitLabBranchDiscovery {
                               strategyId(3)          // 1=default branch, 2=named, 3=all branches
                           }
-                          originMergeRequestDiscoveryTrait {
+                          gitLabOriginDiscovery {
                               strategyId(1)          // discover origin MRs (merged with target)
                           }
                           gitLabTagDiscovery()       // v* tags are protected in GitLab (Phase 4)
