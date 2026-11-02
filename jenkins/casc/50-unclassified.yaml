@@ -76,10 +76,13 @@ unclassified:
     smtpPort: "${SMTP_PORT:-587}"
     replyToAddress: "${SMTP_FROM:-devsecops-platform@localhost}"
     charset: "UTF-8"
-    # Phase 10: SMTP auth from secrets/jenkins-notifications.env — empty
-    # values mean "no authentication" (mailer skips auth when username empty)
-    smtpAuthUsername: "${SMTP_USER:-}"
-    smtpAuthPassword: "${SMTP_PASSWORD:-}"
+    # NOTE: smtpAuthUsername/smtpAuthPassword are NO LONGER valid JCasC
+    # attributes on hudson.tasks.Mailer (UnknownAttributesException → boot
+    # failure). Hostless config = mailer inert, which matches a site without
+    # SMTP. To add authenticated SMTP later: configure once in the UI
+    # (Manage Jenkins → System → E-mail Notification), then GET
+    # /configuration-as-code/export to see this plugin version's canonical
+    # schema and commit that back here.
 
   # Vault plugin GLOBAL configuration (Phase 11, D-36) — withVault(...) in
   # pipelines falls back to these values: controller ↔ vault over the shared
