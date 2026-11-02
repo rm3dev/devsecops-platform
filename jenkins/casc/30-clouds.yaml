@@ -28,7 +28,10 @@ jenkins:
         containerCap: 20
         dockerApi:
           dockerHost:
-            uri: "http://docker-socket-proxy:2375"
+            # docker-java accepts tcp:// (plain) / unix:// ONLY — "http://" dies at
+            # runtime with "Unsupported protocol scheme" (seen on the watchdog thread,
+            # blocks ALL agent provisioning). socket-proxy speaks plain HTTP → tcp://.
+            uri: "tcp://docker-socket-proxy:2375"
           connectTimeout: 15
           readTimeout: 60
         templates:
