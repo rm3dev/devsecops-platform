@@ -38,10 +38,13 @@ unclassified:
   # Developer on 'teams' and CANNOT manage project hooks (GitLab requires
   # Maintainer). Webhooks are registered at onboarding by the platform admin
   # with gitlab/scripts/add-webhook.sh (root token); the hourly org-folder scan
-  # is the safety net for missed events. Webhook delivery verification uses
-  # secretCredentialsId → the 'gitlab-webhook-secret' credential (20-credentials
-  # .yaml, same GITLAB_WEBHOOK_TOKEN value) — the plaintext 'secretToken' field
-  # is DEPRECATED and current JCasC hard-fails boot on deprecated attributes.
+  # is the safety net for missed events.
+  # NO webhook-secret field here on purpose: 'secretToken' is deprecated (JCasC
+  # hard-fails boot on deprecated attributes) and this plugin version has no
+  # replacement data-bound field — current gitlab-branch-source manages hook
+  # secrets per-hook automatically. Manual hooks still send X-Gitlab-Token
+  # (GITLAB_WEBHOOK_TOKEN); trigger behavior is verified empirically at
+  # onboarding (GETTING-STARTED §11/§12), with the hourly scan as safety net.
   gitLabServers:
     servers:
       - name: "gitlab"
@@ -50,7 +53,6 @@ unclassified:
         manageWebHooks: false
         manageSystemHooks: false
         hooksRootUrl: ""
-        secretCredentialsId: "gitlab-webhook-secret"
 
   # SonarQube server (quality-gate webhook secret shared with Phase 5 setup)
   sonarGlobalConfiguration:
