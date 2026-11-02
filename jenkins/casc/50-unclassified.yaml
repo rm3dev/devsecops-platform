@@ -88,10 +88,13 @@ unclassified:
   # pipelines falls back to these values: controller ↔ vault over the shared
   # frontend-network, AppRole credential from vault/scripts/50-jenkins-approle.sh
   # (1h tokens, policy-scoped to secret/platform/{notifications,cosign}).
-  vaultConfiguration:
-    vaultUrl: "http://vault:8200"
-    vaultCredentialId: "vault-approle"
-    engineVersion: 2
+  # Schema verified against plugin source: @Symbol("hashicorpVault") with a
+  # single data-bound 'configuration' property (VaultConfiguration).
+  hashicorpVault:
+    configuration:
+      vaultUrl: "http://vault:8200"
+      vaultCredentialId: "vault-approle"
+      engineVersion: 2
 
   # Prometheus scrape endpoint: GET /prometheus/ (job 'jenkins' in
   # monitoring/prometheus/prometheus.yml — goes UP with this plugin installed)
