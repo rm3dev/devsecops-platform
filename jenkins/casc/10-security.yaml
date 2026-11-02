@@ -61,7 +61,9 @@ jenkins:
               - "View/Configure"
               - "View/Create"
               - "View/Delete"
-              - "Computer/Read"
+              # NOTE: there is NO "Computer/Read" permission in Jenkins core —
+              # agent visibility is granted by Overall/Read. An unknown string
+              # here aborts JCasC at boot (BootFailure, exit 5, restart loop).
               - "Computer/Build"
               - "Computer/Configure"
               - "Computer/Connect"
