@@ -95,11 +95,14 @@ unclassified:
 
   # Prometheus scrape endpoint: GET /prometheus/ (job 'jenkins' in
   # monitoring/prometheus/prometheus.yml — goes UP with this plugin installed)
+  # NOTE: 'url' and 'countFinishedBuilds' are NOT valid JCasC attributes on
+  # the pinned plugin version (UnknownAttributesException → boot failure).
+  # Endpoint path defaults to 'prometheus' — exactly what prometheus.yml
+  # scrapes — so dropping 'url' changes nothing. Schema ground truth:
+  # GET /configuration-as-code/export on a running controller.
   prometheusConfiguration:
-    url: "prometheus"
     useAuthenticatedEndpoint: false
     defaultNamespace: "jenkins"
-    countFinishedBuilds: true
     countFailedBuilds: true
     countSuccessfulBuilds: true
     countUnstableBuilds: true
