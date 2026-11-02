@@ -61,10 +61,11 @@ jenkins:
               - "View/Configure"
               - "View/Create"
               - "View/Delete"
-              # NOTE: there is NO "Computer/Read" permission in Jenkins core —
-              # agent visibility is granted by Overall/Read. An unknown string
-              # here aborts JCasC at boot (BootFailure, exit 5, restart loop).
-              - "Computer/Build"
+              # NOTE: Jenkins core has NO "Computer/Read" (agent visibility =
+              # Overall/Read) and REMOVED the legacy "Computer/Build" — unknown
+              # permission strings abort JCasC at boot (BootFailure, exit 5).
+              # Valid Agent-group permissions: Configure, Connect, Create,
+              # Delete, Disconnect, ExtendedRead.
               - "Computer/Configure"
               - "Computer/Connect"
               - "Computer/Disconnect"
