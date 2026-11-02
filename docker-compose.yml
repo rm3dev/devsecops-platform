@@ -162,8 +162,10 @@ services:
         gitlab_rails['allow_local_requests_from_web_hooks_and_services'] = true
         # Backups kept 14 days locally; off-host copy handled by restic (P11)
         gitlab_rails['backup_keep_time'] = 1209600
-        # Phase 10: exporters ONLY — the bundled Prometheus/Grafana/Alertmanager
+        # Phase 10: exporters ONLY — the bundled Prometheus/Alertmanager
         # inside omnibus stay disabled (external stack scrapes gitlab:9168).
+        # NOTE: do NOT add grafana[...] settings — GitLab removed the bundled
+        # Grafana in 16.4; unknown omnibus keys abort reconfigure (strict mode).
         prometheus_monitoring['enable'] = true
         prometheus['enable'] = false
         alertmanager['enable'] = false
@@ -174,7 +176,6 @@ services:
         puma['worker_processes'] = 2
         sidekiq['max_concurrency'] = 10
         registry['enable'] = false
-        grafana['enable'] = false
     ports:
       # Git over SSH cannot traverse the HTTP proxy — only exception to the
       # "Traefik-only" rule (architecture §5).
