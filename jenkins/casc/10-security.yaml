@@ -137,7 +137,7 @@ security:
   globalJobDslSecurityConfiguration:
     useScriptSecurity: false
 
-  # Agent-to-controller access control stays at the platform default (deny
-  # dangerous command callables) — do not weaken.
-  remotingSecurity:
-    enabled: true
+  # NOTE: do NOT configure 'remotingSecurity' — the symbol was removed from
+  # core. Agent-to-controller access control (deny dangerous callables) is
+  # now permanently ENABLED and not configurable; JCasC hard-fails boot on
+  # unknown attributes (UnknownAttributesException → exit 5).
