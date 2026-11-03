@@ -26,6 +26,9 @@ docker image inspect "$IMAGE" >/dev/null 2>&1 \
   || die "image ${IMAGE} missing — run: ./scripts/build-images.sh --agent security"
 
 mkdir -p "$KEYS_DIR"; chmod 700 "$KEYS_DIR"
+# NOTE: agent-security ends with USER jenkins (uid 1000) — the keypair runs
+# need --user root to enter the root-owned 0700 keys dir (dash reports the
+# permission failure misleadingly as "can't cd to /keys").
 
 if [[ -s "$KEYS_DIR/cosign.key" && -s "$KEYS_DIR/cosign.pub" ]]; then
   log_ok "existing cosign keypair found in secrets/cosign/ — reusing (delete the directory to regenerate)"
@@ -42,6 +45,7 @@ else
   COSIGN_PASSWORD_VALUE="$(gen_secret)"
   log_info "generating cosign keypair inside ${IMAGE}…"
   docker run --rm \
+    --user root \
     -v "$KEYS_DIR":/keys \
     -e COSIGN_PASSWORD="$COSIGN_PASSWORD_VALUE" \
     --entrypoint sh "$IMAGE" -c \
@@ -54,7 +58,7 @@ else
 fi
 
 # Sanity: private key parses and public key matches (cosign inside the image)
-docker run --rm -v "$KEYS_DIR":/keys -e COSIGN_PASSWORD="$(grep -oP '(?<=^COSIGN_PASSWORD=).*' "$COSIGN_ENV")" \
+docker run --rm --user root -v "$KEYS_DIR":/keys -e COSIGN_PASSWORD="$(grep -oP '(?<=^COSIGN_PASSWORD=).*' "$COSIGN_ENV")" \
   --entrypoint sh "$IMAGE" -c \
   'openssl pkey -in /keys/cosign.key -noout >/dev/null 2>&1 || openssl ec -in /keys/cosign.key -noout >/dev/null' \
   && log_ok "private key parses (encrypted PEM, COSIGN_PASSWORD accepted by openssl)" \
