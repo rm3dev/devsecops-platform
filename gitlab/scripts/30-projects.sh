@@ -97,18 +97,19 @@ protect_tag    "$GO_PID" "rel-*"
 # ------------------------------------------------------------ memberships ----
 ensure_member() { # scope(project|group), id, user_id, access_level
   local scope="$1" target="$2" uid="$3" level="$4"
-  local code
+  local resp code
   # GitLab semantics: PUT /members/:uid EDITS an existing member and 404s for
-  # non-members; adding requires POST /members. PUT-only silently skipped
-  # every membership (404 → warn) — jenkins-ci would never have gotten
-  # Maintainer on gitops-repository (digest pushes fail without it).
-  code="$(gl_api_rc PUT "/${scope}s/${target}/members/${uid}" "$(jq -n --argjson l "$level" '{access_level:$l}')" | sed -n '1p')"
+  # non-members; adding requires POST /members (pattern proven live by
+  # 50-gitops-repository.sh). Whole response captured (no pipes → no SIGPIPE).
+  resp="$(gl_api_rc PUT "/${scope}s/${target}/members/${uid}" "$(jq -n --argjson l "$level" '{access_level:$l}')")"
+  code="${resp%%$'\n'*}"
   if [[ "$code" == "404" ]]; then
-    code="$(gl_api_rc POST "/${scope}s/${target}/members" "$(jq -n --argjson u "$uid" --argjson l "$level" '{user_id:$u, access_level:$l}')" | sed -n '1p')"
+    resp="$(gl_api_rc POST "/${scope}s/${target}/members" "$(jq -n --argjson u "$uid" --argjson l "$level" '{user_id:$u, access_level:$l}')")"
+    code="${resp%%$'\n'*}"
   fi
   case "$code" in
     200|201) log_ok "member uid=${uid} → ${scope} ${target} (access=${level})" ;;
-    *)       log_warn "membership uid=${uid} → ${scope} ${target} returned HTTP ${code}" ;;
+    *)       log_warn "membership uid=${uid} → ${scope} ${target} HTTP ${code}: $(tail -n +2 <<<"$resp" | head -c 200)" ;;
   esac
 }
 JENKINS_CI_ID="$(get_user_id jenkins-ci || true)"; [[ -n "$JENKINS_CI_ID" ]] || die "jenkins-ci missing — run 20-users-groups.sh"

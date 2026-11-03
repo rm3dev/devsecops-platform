@@ -35,7 +35,7 @@ for hook_id in $(gl_api GET "/projects/${PID}/hooks" | jq -r --arg u "$WEBHOOK_U
   log_info "removed stale webhook ${hook_id}"
 done
 
-gl_api POST "/projects/${PID}/hooks" "$(jq -n --arg u "$WEBHOOK_URL" --arg t "$GITLAB_WEBHOOK_TOKEN" '{
+RESP="$(gl_api POST "/projects/${PID}/hooks" "$(jq -n --arg u "$WEBHOOK_URL" --arg t "$GITLAB_WEBHOOK_TOKEN" '{
   url: $u,
   token: $t,
   push_events: true,
@@ -45,7 +45,9 @@ gl_api POST "/projects/${PID}/hooks" "$(jq -n --arg u "$WEBHOOK_URL" --arg t "$G
   enable_ssl_verification: false,
   confidential_issues_events: false,
   note_events: false
-}')" | jq -e '.id' >/dev/null || die "webhook creation failed for ${PROJECT_PATH}"
+}')")"
+jq -e '.id' <<<"$RESP" >/dev/null \
+  || die "webhook creation failed for ${PROJECT_PATH} — GitLab response: $(head -c 400 <<<"$RESP")"
 
 log_ok "webhook → ${WEBHOOK_URL} registered on ${PROJECT_PATH} (push/MR/tag events, shared secret set)"
 log_info "Until the matching Jenkins job exists (Phase 6 multibranch seed), deliveries will report HTTP 404 — GitLab retries automatically on the next event."
