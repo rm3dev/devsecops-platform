@@ -631,7 +631,7 @@ services:
       prometheus:
         condition: service_healthy
       loki:
-        condition: service_healthy
+        condition: service_started   # loki image is distroless → no healthcheck possible
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/health >/dev/null || exit 1"]
       interval: 30s
@@ -659,12 +659,13 @@ services:
       - ${DATA_ROOT}/loki-data:/loki
     networks:
       - monitoring-network
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:3100/ready | grep -q ready || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 10
-      start_period: 90s
+    # NO healthcheck: the grafana/loki 3.7.9 image is DISTROLESS — no /bin/sh,
+    # no wget — so any CMD-SHELL probe fails forever with "OCI runtime exec
+    # failed" (proven live) while the service itself runs perfectly. Verify
+    # readiness from a sibling busybox-based container instead:
+    #   docker compose exec prometheus wget -qO- http://loki:3100/ready
+    # Dependents (grafana, alloy) gate on service_started; Grafana retries its
+    # Loki datasource after boot, so a slow Loki start is harmless.
     deploy:
       resources:
         limits:
@@ -693,7 +694,7 @@ services:
       - cicd-network
     depends_on:
       loki:
-        condition: service_healthy
+        condition: service_started   # loki image is distroless → no healthcheck possible
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:12345/-/healthy >/dev/null || exit 1"]
       interval: 30s
