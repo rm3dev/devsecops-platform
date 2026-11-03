@@ -15,6 +15,9 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 echo "${C_BOLD}== Phase 4: GitLab provisioning ==${C_RESET}"
 "$HERE/10-create-root-token.sh"   || die "step 10 failed"
+# DB-level application settings (survives the omnibus first-init-only quirk —
+# see header of 15-application-settings.sh; webhooks depend on it)
+"$HERE/15-application-settings.sh" || die "step 15 failed"
 "$HERE/20-users-groups.sh"        || die "step 20 failed"
 "$HERE/30-projects.sh"            || die "step 30 failed"
 "$HERE/40-seed-repositories.sh"   || die "step 40 failed"
