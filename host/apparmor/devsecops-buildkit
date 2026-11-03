@@ -1,0 +1,26 @@
+abi <abi/4.0>,
+include <tunables/global>
+
+# =============================================================================
+# Host AppArmor profile for the rootless BuildKit container (Ubuntu 24.04+).
+#
+# WHY: Ubuntu 24 sets kernel.apparmor_restrict_unprivileged_userns=1 —
+# unprivileged processes cannot create user namespaces unless confined by a
+# profile granting the `userns` permission. Plain apparmor=unconfined is NOT
+# exempt (proven live: rootlesskit dies with
+# "fork/exec /proc/self/exe: permission denied"). docker-compose attaches this
+# profile via security_opt: apparmor=devsecops-buildkit; flags=(unconfined)
+# keeps every other behavior identical to unconfined while allowing userns.
+# The restriction stays ACTIVE for everything else on the host.
+#
+# INSTALL (root):
+#   install -m 0644 host/apparmor/devsecops-buildkit /etc/apparmor.d/devsecops-buildkit
+#   apparmor_parser -a /etc/apparmor.d/devsecops-buildkit   # first load
+#   apparmor_parser -r /etc/apparmor.d/devsecops-buildkit   # after edits
+# VERIFY:
+#   aa-status | grep devsecops-buildkit
+# =============================================================================
+
+profile devsecops-buildkit flags=(unconfined) {
+  userns,
+}

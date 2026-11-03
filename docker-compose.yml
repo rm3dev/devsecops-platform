@@ -781,12 +781,17 @@ services:
       - tcp://0.0.0.0:1234
       - --root
       - /home/user/.local/share/buildkit
-    # Rootless BuildKit requires unconfined seccomp/apparmor (documented
-    # trade-off, architecture §7.3/D-04): isolated networks, no host mounts
-    # except its own cache directory, no privileged mode.
+    # Rootless BuildKit requires unconfined seccomp AND a host AppArmor profile
+    # granting `userns`: Ubuntu 24's apparmor_restrict_unprivileged_userns=1
+    # blocks rootlesskit otherwise, and plain apparmor=unconfined is NOT exempt
+    # (proven live). Profile lives in host/apparmor/devsecops-buildkit — install:
+    #   install -m 0644 host/apparmor/devsecops-buildkit /etc/apparmor.d/
+    #   apparmor_parser -a /etc/apparmor.d/devsecops-buildkit
+    # Remaining trade-offs per architecture §7.3/D-04: isolated networks, no
+    # host mounts except its own cache directory, no privileged mode.
     security_opt:
       - seccomp=unconfined
-      - apparmor=unconfined
+      - apparmor=devsecops-buildkit
     volumes:
       - ${DATA_ROOT}/buildkit-cache:/home/user/.local/share/buildkit
     networks:
