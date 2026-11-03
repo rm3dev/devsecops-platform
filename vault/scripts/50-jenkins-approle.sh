@@ -53,15 +53,21 @@ vx write auth/approle/role/jenkins-platform \
 log_ok "role jenkins-platform configured (token ttl 1h / max 4h)"
 
 # --- 4. credentials → env file -------------------------------------------------------
-ROLE_ID="$(vx read -field=role_id auth/approle/role/jenkins-platform/role-id)"
-SECRET_ID="$(vx write -f auth/approle/role/jenkins-platform/secret-id -field=secret_id)"
+# Vault 2.x CLI: ALL flags must precede positional args — "-field=… after the
+# path" is shipped to the endpoint as a bogus parameter (CLI warns "Command
+# flags must be provided before positional arguments") and the capture becomes
+# the full response table instead of the field value. Flags-first everywhere.
+ROLE_ID="$(vx read -field=role_id auth/approle/role/jenkins-platform/role-id)" \
+  || die "failed to obtain role-id"
+SECRET_ID="$(vx write -f -field=secret_id auth/approle/role/jenkins-platform/secret-id)" \
+  || die "failed to obtain secret-id"
 [[ -n "$ROLE_ID" && -n "$SECRET_ID" ]] || die "failed to obtain role-id/secret-id"
 ENVF="$ROOT_DIR/secrets/vault-jenkins.env"
 mkdir -p "$(dirname "$ENVF")"
 umask 077
 printf 'VAULT_APPROLE_ID=%s\nVAULT_APPROLE_SECRET_ID=%s\n' "$ROLE_ID" "$SECRET_ID" > "$ENVF"
 chmod 600 "$ENVF"; umask 022
-log_ok "secrets/vault-jenkins.env written (recreate jenkins to apply: docker compose up -d jenkins)"
+log_ok "secrets/vault-jenkins.env written (recreate jenkins to apply: docker compose --profile core up -d --force-recreate jenkins)"
 
 # --- 5. end-to-end verification ------------------------------------------------------
 # approle login is an UNAUTHENTICATED path — run it with an explicitly empty
@@ -70,7 +76,8 @@ vx_raw() {
   ( cd "$ROOT_DIR" && docker compose -f docker-compose.yml exec -T -e VAULT_TOKEN="${1:-}" vault \
       vault "${@:2}" )
 }
-CLIENT_TOKEN="$(vx_raw "" write -f auth/approle/login role_id="$ROLE_ID" secret_id="$SECRET_ID" -field=token)"
+CLIENT_TOKEN="$(vx_raw "" write -f -field=token auth/approle/login role_id="$ROLE_ID" secret_id="$SECRET_ID")" \
+  || die "approle login failed — check the policy/role wiring"
 [[ -n "$CLIENT_TOKEN" ]] || die "approle login failed — check the policy/role wiring"
 vx_raw "$CLIENT_TOKEN" kv get -field=smtp_host secret/platform/notifications >/dev/null 2>&1 \
   || die "client token cannot read secret/platform/notifications — run 40-platform-secrets.sh first"

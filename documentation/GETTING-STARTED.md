@@ -370,8 +370,10 @@ up by the platform, on purpose. Lose 3+ keys = lose every secret forever.
 printf 'VAULT_ROOT_TOKEN=<your-root-token>\n' > secrets/vault-root.env && chmod 600 secrets/vault-root.env
 ```
 
-The init output leaves Vault **unsealed** already; after any restart it comes
-back SEALED and needs 3 of 5 keys:
+Older Vault releases left the vault **unsealed** right after init — Vault 2.x
+with raft storage does NOT (verified live on 2.2.1: `initialized: true,
+sealed: true` immediately after init). So unseal now, and after *every*
+restart, with 3 of the 5 keys:
 
 ```bash
 docker compose exec vault vault operator unseal     # run 3×, pasting a key each time
