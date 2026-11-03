@@ -160,6 +160,11 @@ services:
         # addresses. Contained risk: only this GitLab instance makes such
         # calls, and only to services on its own networks.
         gitlab_rails['allow_local_requests_from_web_hooks_and_services'] = true
+        # Health endpoints (/-/health, /-/readiness, /-/liveness) are restricted
+        # to this allow-list — the default (localhost only) made Traefik's probe
+        # receive a 404 "Not Found" from Rails while the container's own
+        # localhost healthcheck passed. Frontend subnet = Traefik's network.
+        gitlab_rails['monitoring_whitelist'] = ['127.0.0.0/8', '::1/128', '172.30.0.0/24']
         # Backups kept 14 days locally; off-host copy handled by restic (P11)
         gitlab_rails['backup_keep_time'] = 1209600
         # Phase 10: exporters ONLY — the bundled Prometheus/Alertmanager
