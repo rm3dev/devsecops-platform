@@ -53,8 +53,16 @@ proxy_block() { # remoteUrl → common proxy sections
                              enableCookies:false, useTrustStore:false}}
   }'
 }
+# Nexus 3.96+ removed the cleanup-policy REST API (see 20-cleanup-policies.sh
+# header). Probe once: without the API, referencing policy names at repo
+# creation would fail — so degrade every binding to an empty list and let the
+# UI walkthrough (printed by step 20) attach policies afterwards.
+CLEANUP_API="yes"
+[[ "$(nx_api_rc GET "/cleanup-policies" | sed -n '1p')" == "200" ]] || CLEANUP_API="no"
+[[ "$CLEANUP_API" == "yes" ]] || log_warn "cleanup-policy REST API absent — creating repos WITHOUT policy bindings"
+
 cleanup_of() { # policy-name-or-empty → json fragment
-  if [[ -n "$1" ]]; then jq -n --arg p "$1" '{policyNames:[$p]}'; else jq -n '{policyNames:[]}'; fi
+  if [[ "$CLEANUP_API" == "yes" && -n "$1" ]]; then jq -n --arg p "$1" '{policyNames:[$p]}'; else jq -n '{policyNames:[]}'; fi
 }
 
 log_info "── proxies ──"

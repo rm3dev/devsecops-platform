@@ -16,6 +16,15 @@
 # to docker-hosted — hosted digests are referenced by gitops-repository and
 # must survive until explicitly removed by a release process (D-21).
 #
+# NEXUS 3.96+ REALITY (probed live on 3.96.4): the cleanup-policy REST API is
+# GONE — GET /v1/cleanup-policies and /beta/... return 404 and swagger.json
+# (HTTP 200, ~692 KB) contains zero paths matching cleanup|polic. This script
+# therefore PROBES the endpoint first:
+#   • API present (older/other Nexus) → create/update all six policies via REST.
+#   • API absent  → print the exact one-time UI walkthrough and exit 0 so
+#     run-all.sh continues; 30-repositories.sh degrades in step (it skips
+#     cleanupPolicyNames bindings, which would otherwise 400 repo creation).
+#
 # NOTE: REST criteria are in MINUTES (UI shows days): 90 d = 129600, 30 d = 43200.
 # NOTE: Nexus does not expose scheduled-task creation via REST. ONE-TIME manual
 # step (installation.md §10.6): enable task "Admin - Cleanup service" (daily)
@@ -31,6 +40,31 @@ require_cmd jq
 MINS_90D=129600
 MINS_30D=43200
 
+# ------------------------------------------------------------------ probe ----
+PROBE_CODE="$(nx_api_rc GET "/cleanup-policies" | sed -n '1p')"
+if [[ "$PROBE_CODE" != "200" ]]; then
+  log_warn "cleanup-policy REST API unavailable (HTTP ${PROBE_CODE}) — removed in Nexus 3.96+."
+  log_warn "ONE-TIME UI walkthrough instead (Nexus → sign in as admin):"
+  log_warn "  1. ⚙ Admin → Repository → Cleanup Policies → 'Create cleanup policy'"
+  while read -r pname pformat pdays; do
+    [[ -n "$pname" ]] && log_warn "       • ${pname}: format=${pformat}, 'Remove components NOT downloaded in last ${pdays} days'"
+  done <<'TABLE'
+cleanup-maven2 maven2 90
+cleanup-npm npm 90
+cleanup-pypi pypi 90
+cleanup-nuget nuget 90
+cleanup-docker docker 30
+cleanup-raw raw 90
+TABLE
+  log_warn "  2. Bind policies: Repository → Repositories → <repo> → Cleanup → add policy"
+  log_warn "     (maven-central/npm-proxy/pypi-proxy/nuget-proxy/ghcr-proxy/docker-proxy per table;"
+  log_warn "      cleanup-docker goes ONLY on docker-PROXY, NEVER on docker-hosted — D-21)."
+  log_warn "  3. Admin → System → Tasks → 'Create task' → 'Admin - Cleanup service', daily (§10.6)."
+  log_ok "step 20 degraded gracefully (no REST cleanup API in this Nexus version)"
+  exit 0
+fi
+
+# ------------------------------------------------------- REST path (< 3.96) ----
 ensure_policy() { # name, format, lastDownloadedMinutes, notes
   local name="$1" format="$2" minutes="$3"
   local existing_id
