@@ -59,9 +59,13 @@ loki.write "loki" {
 	endpoint {
 		url = "http://loki:3100/loki/api/v1/push"
 
-		queue_config {
-			max_backoff = "10s" // Alloy durations are STRINGS (latent P2 bug caught by `alloy fmt` in P10)
-		}
+		// NOTE (verified by running pinned alloy v1.21.2 against this file):
+		// queue_config was redesigned upstream — valid attrs are now only
+		// capacity/min_shards/drain_timeout/block_on_overflow, and ANY change
+		// from defaults requires --stability.level=experimental. The old
+		// max_backoff attribute no longer exists (fatal at load: "unrecognized
+		// attribute name"). Defaults are right-sized for this single-node
+		// platform, so the block is removed entirely.
 	}
 }
 
