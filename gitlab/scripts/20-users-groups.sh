@@ -46,11 +46,11 @@ ensure_user() { # username, email → echoes user id
           | jq -r '.id // empty')"
     [[ -n "$id" ]] || die "failed to create user '${username}'"
     append_secret "$ROOT_DIR/secrets/gitlab-users.env" "GITLAB_${username^^}_PASSWORD=${password}"
-    log_info "user '${username}' created (id=${id}; password → secrets/gitlab-users.env)"
+    log_info "user '${username}' created (id=${id}; password → secrets/gitlab-users.env)" >&2
   else
-    log_ok "user '${username}' exists (id=${id})"
+    log_ok "user '${username}' exists (id=${id})" >&2
   fi
-  echo "$id"
+  echo "$id"   # the ONLY stdout output — callers capture this via $(...)
 }
 
 JENKINS_CI_ID="$(ensure_user jenkins-ci  "jenkins-ci@${PLATFORM_DOMAIN}")"

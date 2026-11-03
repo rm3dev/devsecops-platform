@@ -51,5 +51,5 @@ export GITLAB_ROOT_TOKEN="$NEW_TOKEN"
 # Verify through the API
 VERSION="$(gl_api GET /version | jq -r '.version // "UNREACHABLE"')"
 [[ "$VERSION" != "UNREACHABLE" ]] || die "freshly created token failed API verification"
-log_ok "root PAT created (name='${TOKEN_NAME}'…, expires in 400 days) — GitLab ${VERSION}"
+log_ok "root PAT created (name='${TOKEN_NAME}'…, expires in 364 days) — GitLab ${VERSION}"
 log_info "Rotate per policy (Phase 11 moves platform automation to Vault-issued short-lived tokens)."
