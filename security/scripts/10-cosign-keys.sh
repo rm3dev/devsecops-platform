@@ -57,10 +57,13 @@ else
   log_ok "keypair generated → secrets/cosign/{cosign.key,cosign.pub}; env → secrets/cosign.env"
 fi
 
-# Sanity: private key parses and public key matches (cosign inside the image)
+# Sanity: private key parses and public key matches (cosign inside the image).
+# openssl needs -passin env:COSIGN_PASSWORD — it does NOT read COSIGN_PASSWORD
+# on its own (that env convention is cosign's); without it an encrypted PEM
+# fails with a wall of EncryptedPrivateKeyInfo decoder errors.
 docker run --rm --user root -v "$KEYS_DIR":/keys -e COSIGN_PASSWORD="$(grep -oP '(?<=^COSIGN_PASSWORD=).*' "$COSIGN_ENV")" \
   --entrypoint sh "$IMAGE" -c \
-  'openssl pkey -in /keys/cosign.key -noout >/dev/null 2>&1 || openssl ec -in /keys/cosign.key -noout >/dev/null' \
+  'openssl pkey -in /keys/cosign.key -noout -passin env:COSIGN_PASSWORD >/dev/null 2>&1 || openssl ec -in /keys/cosign.key -noout -passin env:COSIGN_PASSWORD >/dev/null' \
   && log_ok "private key parses (encrypted PEM, COSIGN_PASSWORD accepted by openssl)" \
   || log_warn "private key parse check failed — verify manually before relying on signing"
 
