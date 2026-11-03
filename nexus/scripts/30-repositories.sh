@@ -27,16 +27,17 @@ require_cmd jq
 DOCKER_GROUP_PORT="${NEXUS_DOCKER_GROUP_PORT:-8085}"   # must match dynamic.yml.tmpl tcp service
 
 ensure_repo() { # format, type, name, json-body
-  local format="$1" type="$2" name="$3" body="$4" code
+  local format="$1" type="$2" name="$3" body="$4" resp code
   if nx_repo_exists "$name"; then
     log_ok "repository '${name}' exists — skipping"
     return 0
   fi
-  code="$(nx_api_rc POST "/repositories/${format}/${type}" "$body" | sed -n '1p')"
+  resp="$(nx_api_rc POST "/repositories/${format}/${type}" "$body")"
+  code="${resp%%$'\n'*}"
   if [[ "$code" == "201" || "$code" == "200" ]]; then
     log_ok "repository '${name}' created (${format}/${type})"
   else
-    die "repository '${name}' creation failed (HTTP ${code}) — body: ${body}"
+    die "repository '${name}' creation failed (HTTP ${code}) — Nexus said: $(tail -n +2 <<<"$resp" | head -c 400) — request was: ${body}"
   fi
 }
 
