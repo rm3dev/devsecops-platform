@@ -54,7 +54,7 @@ check_all() {
     printf '%-28s %sWARN%s    (status not UP yet — DB migration in progress?)\n' "sonarqube" "$C_YELLOW" "$C_RESET"
   }
   probe "nexus"      "nexus.${PLATFORM_DOMAIN}"         "/service/rest/v1/status" "200"      || failed=$((failed+1))
-  probe "grafana"    "grafana.${PLATFORM_DOMAIN}"       "/api/health"          '"database":"ok"' || failed=$((failed+1))
+  probe "grafana"    "grafana.${PLATFORM_DOMAIN}"       "/api/health"          '"database":[[:space:]]*"ok"' || failed=$((failed+1))
 
   # Vault: report initialized/sealed explicitly (sealed is NOT a failure here —
   # it requires manual unseal by design, architecture D-09)
