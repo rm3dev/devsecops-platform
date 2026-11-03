@@ -794,7 +794,9 @@ services:
       - artifact-network
       - agents-network
     healthcheck:
-      test: ["CMD", "buildctl", "debug", "workers"]
+      # command: listens on tcp ONLY → the default unix socket buildctl probes
+      # is never created; must pass the tcp addr explicitly.
+      test: ["CMD", "buildctl", "--addr", "tcp://127.0.0.1:1234", "debug", "workers"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -814,6 +816,15 @@ services:
     <<: *hardened
     logging: *default-logging
     read_only: true
+    # Entrypoint renders haproxy.cfg into /tmp (read_only WITHOUT these tmpfs
+    # mounts = guaranteed exit-1 crash loop — proven live); pidfile (/run) and
+    # server-state (/var/lib/haproxy) also need writable paths. tmpfs keeps the
+    # read-only-rootfs hardening intact. Template has no chroot/user directives,
+    # so cap_drop ALL + no-new-privileges are safe (verified v0.5.0 sources).
+    tmpfs:
+      - /tmp
+      - /run
+      - /var/lib/haproxy
     cap_drop:
       - ALL
     environment:
