@@ -45,9 +45,13 @@ storage() { # writePolicy → json fragment (default blob store, strict validati
   jq -n --arg wp "$1" '{blobStoreName:"default", strictContentTypeValidation:true, writePolicy:$wp}'
 }
 proxy_block() { # remoteUrl → common proxy sections
+  # Nexus 3.96 proxy schema: contentMaxAge/metadataMaxAge are REQUIRED (400
+  # "must not be null" without them); metadataPolicy/priority/
+  # rewritePackageAttributes no longer exist in the schema (swagger probe:
+  # zero occurrences — ignored as unknown fields, but dead weight → dropped).
   jq -n --arg u "$1" '{
-    proxy: {remoteUrl:$u, contentDisposition:"INLINE", metadataPolicy:"PERMISSIVE",
-            priority:0, rewritePackageAttributes:false},
+    proxy: {remoteUrl:$u, contentDisposition:"INLINE",
+            contentMaxAge:1440, metadataMaxAge:1440},
     negativeCache: {enabled:true, timeToLive:1440},
     httpClient: {blocked:false, autoBlock:true,
                  connection:{retries:0, timeout:1440, enableCircularRedirects:false,

@@ -25,19 +25,28 @@ require_cmd jq
 PUBLISH_FORMATS=("maven2:maven-releases" "maven2:maven-snapshots" "npm:npm-hosted" \
                  "pypi:pypi-hosted" "nuget:nuget-hosted" "raw:raw-hosted" "docker:docker-hosted")
 
+LIVE_REPOS="$(nx_api GET "/repositories" | jq -r '.[] | "\(.format) \(.name)"')"
+
 PRIVILEGES='["nx-search-read"]'
 # read + browse on ALL live repositories (format + name from the API)
 while read -r fmt name; do
   PRIVILEGES="$(jq -c --arg p1 "nx-repository-view-${fmt}-${name}-read" \
                     --arg p2 "nx-repository-view-${fmt}-${name}-browse" \
                     '. + [$p1, $p2]' <<< "$PRIVILEGES")"
-done < <(nx_api GET "/repositories" | jq -r '.[] | "\(.format) \(.name)"')
-# add + edit on hosted publish targets
+done <<< "$LIVE_REPOS"
+# add + edit ONLY on publish targets that actually exist — Nexus auto-creates
+# nx-repository-view-* privileges per repository, so naming a not-yet-created
+# repo 400s the whole role ("Privilege ... not found"). Re-run after step 30
+# completes and the role UPDATE path picks the late additions up.
 for entry in "${PUBLISH_FORMATS[@]}"; do
   fmt="${entry%%:*}"; name="${entry##*:}"
-  PRIVILEGES="$(jq -c --arg p1 "nx-repository-view-${fmt}-${name}-add" \
-                    --arg p2 "nx-repository-view-${fmt}-${name}-edit" \
-                    '. + [$p1, $p2]' <<< "$PRIVILEGES")"
+  if grep -qxF "${fmt} ${name}" <<< "$LIVE_REPOS"; then
+    PRIVILEGES="$(jq -c --arg p1 "nx-repository-view-${fmt}-${name}-add" \
+                      --arg p2 "nx-repository-view-${fmt}-${name}-edit" \
+                      '. + [$p1, $p2]' <<< "$PRIVILEGES")"
+  else
+    log_warn "publish target '${name}' (${fmt}) not present yet — add/edit privileges skipped (re-run after step 30)"
+  fi
 done
 log_info "role privilege set: $(jq 'length' <<< "$PRIVILEGES") privileges"
 
