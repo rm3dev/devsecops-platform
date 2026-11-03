@@ -135,7 +135,7 @@ Re-run `scripts/validate.sh --versions` at bootstrap; pin policy = explicit patc
 |---|---------|----------------|-------|
 | 8 | `prometheus` | `prom/prometheus:v3.13.5` | 2026-10-21 security release; Prometheus 3.x |
 | 9 | `alertmanager` | `prom/alertmanager:v0.28.1` | Pairs with Prometheus 3.x |
-| 10 | `grafana` | `grafana/grafana-oss:13.3.0` | 2026-10-27 |
+| 10 | `grafana` | `grafana/grafana:13.3.0` | 2026-10-27 |
 | 11 | `loki` | `grafana/loki:3.7.9` | 2026-10-20; monolithic mode, filesystem storage |
 | 12 | `alloy` | `grafana/alloy:v1.21.2` | 2026-10-22; Alloy is the supported successor to Promtail (D-10) |
 | 13 | `node-exporter` | `prom/node-exporter:v1.9.1` | Host metrics |

@@ -605,7 +605,10 @@ services:
           memory: 64M
 
   grafana:
-    image: grafana/grafana-oss:${GRAFANA_VERSION}
+    # NOTE: Docker Hub channel grafana/grafana-oss FROZE at 8.1.0-beta2 (2021);
+    # grafana/grafana is the maintained unified image — without a license file it
+    # runs with enterprise features disabled, i.e. OSS behavior (verified 13.3.0).
+    image: grafana/grafana:${GRAFANA_VERSION}
     profiles: ["monitoring", "all"]
     restart: unless-stopped
     <<: *hardened
