@@ -74,10 +74,13 @@ ensure_pat() { # user_id, token_name, scopes(csv), secret_file, secret_key
     return
   fi
   local scopes_json; scopes_json="$(jq -cn --arg s "$scopes" '$s | split(",")')"
+  # GitLab enforces max PAT lifetime of 365 days (expires_at must be strictly
+  # before today+365) — 364 days keeps a margin and stays valid on re-runs.
+  local expiry; expiry="$(date -d '+364 days' +%F 2>/dev/null || date -v+364d +%F)"
   local token
   token="$(gl_api POST "/users/${uid}/personal_access_tokens" \
-    "$(jq -n --arg n "$name" --argjson s "$scopes_json" \
-       '{name:$n, scopes:$s, expires_at:"2027-12-31"}')" | jq -r '.token // empty')"
+    "$(jq -n --arg n "$name" --argjson s "$scopes_json" --arg exp "$expiry" \
+       '{name:$n, scopes:$s, expires_at:$exp}')" | jq -r '.token // empty')"
   [[ -n "$token" ]] || die "failed to create PAT '${name}' for user id ${uid}"
   append_secret "$file" "${key}=${token}"
   log_info "PAT '${name}' created → ${key} in $(basename "$file") (scopes: ${scopes})"

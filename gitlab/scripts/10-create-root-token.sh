@@ -34,7 +34,7 @@ while u.personal_access_tokens.active.find_by(name: name)
   i += 1
   name = '${TOKEN_NAME}-' + i.to_s
 end
-t = u.personal_access_tokens.new(name: name, scopes: ['api'], expires_at: 400.days.from_now)
+t = u.personal_access_tokens.new(name: name, scopes: ['api'], expires_at: 364.days.from_now)  # GitLab enforces max PAT lifetime 365d (strict <; 364 = safe margin)
 t.set_token(SecureRandom.hex(32))
 t.save!
 puts t.token

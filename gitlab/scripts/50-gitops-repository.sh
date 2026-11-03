@@ -63,7 +63,7 @@ if [[ -n "$EXISTING" && -n "$CURRENT_TOKEN" && "$CURRENT_TOKEN" != "SET_IN_PHASE
   log_ok "PAT gitops-write exists and GITOPS_REPO_TOKEN is set — keeping both"
 else
   [[ -n "$EXISTING" ]] && { gl_api DELETE "/personal_access_tokens/${EXISTING}" >/dev/null; log_warn "revoked stale PAT gitops-write (stored token was missing/placeholder)"; }
-  EXPIRES="$(date -d '+365 days' +%F 2>/dev/null || date -v+365d +%F)"
+  EXPIRES="$(date -d '+364 days' +%F 2>/dev/null || date -v+364d +%F)"
   NEW_TOKEN="$(gl_api POST "/users/${JCI_ID}/personal_access_tokens" \
     "$(jq -n --arg exp "$EXPIRES" '{name:"gitops-write", scopes:["write_repository"], expires_at:$exp}')" | jq -r '.token // empty')"
   [[ -n "$NEW_TOKEN" ]] || die "failed to create PAT gitops-write for jenkins-ci"
@@ -86,7 +86,7 @@ if [[ -n "$EXISTING_ARGO" && -n "$CURRENT_ARGO_TOKEN" && "$CURRENT_ARGO_TOKEN" !
   log_ok "PAT argocd-read exists and ARGOCD_GIT_TOKEN is set — keeping both"
 else
   [[ -n "$EXISTING_ARGO" ]] && { gl_api DELETE "/personal_access_tokens/${EXISTING_ARGO}" >/dev/null; log_warn "revoked stale PAT argocd-read"; }
-  EXPIRES="$(date -d '+365 days' +%F 2>/dev/null || date -v+365d +%F)"
+  EXPIRES="$(date -d '+364 days' +%F 2>/dev/null || date -v+364d +%F)"
   NEW_ARGO_TOKEN="$(gl_api POST "/users/${ARGOCD_USER_ID}/personal_access_tokens" \
     "$(jq -n --arg exp "$EXPIRES" '{name:"argocd-read", scopes:["read_repository"], expires_at:$exp}')" | jq -r '.token // empty')"
   [[ -n "$NEW_ARGO_TOKEN" ]] || die "failed to create PAT argocd-read for user 'argocd'"
