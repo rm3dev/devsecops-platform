@@ -88,19 +88,19 @@ ensure_repo nuget proxy nuget-proxy "$(jq -n --argjson s "$(storage PERMISSIVE)"
   '{name:"nuget-proxy", online:true, storage:$s, cleanup:$c, nugetProxy:{queryCacheItemMaxAge:3600, nugetVersion:"V3"}} + $p')"
 ensure_repo docker proxy docker-proxy "$(jq -n --argjson s "$(storage PERMISSIVE)" --argjson p "$(proxy_block 'https://registry-1.docker.io')" \
   --argjson c "$(cleanup_of cleanup-docker)" \
-  '{name:"docker-proxy", online:true, storage:$s, cleanup:$c, docker:{forceBasicAuth:true, v1Enabled:false}, dockerProxy:{cacheForeignLayers:false, foreignLayerUrlWhitelist:[]}} + $p')"
+  '{name:"docker-proxy", online:true, storage:$s, cleanup:$c, docker:{forceBasicAuth:true, v1Enabled:false}, dockerProxy:{indexType:"HUB", cacheForeignLayers:false, foreignLayerUrlWhitelist:[]}} + $p')"
 # ghcr.io pull-through — Phase 7: trivy vulnerability/java DBs are OCI artifacts
 # on ghcr.io; agents fetch them via registry.<domain> (docker-group) so security
 # tooling stays inside the D-16 no-internet boundary.
 ensure_repo docker proxy ghcr-proxy "$(jq -n --argjson s "$(storage PERMISSIVE)" --argjson p "$(proxy_block 'https://ghcr.io')" \
   --argjson c "$(cleanup_of cleanup-docker)" \
-  '{name:"ghcr-proxy", online:true, storage:$s, cleanup:$c, docker:{forceBasicAuth:true, v1Enabled:false}, dockerProxy:{cacheForeignLayers:false, foreignLayerUrlWhitelist:[]}} + $p')"
+  '{name:"ghcr-proxy", online:true, storage:$s, cleanup:$c, docker:{forceBasicAuth:true, v1Enabled:false}, dockerProxy:{indexType:"REGISTRY", cacheForeignLayers:false, foreignLayerUrlWhitelist:[]}} + $p')"
 # Phase 8 (D-27): the Kubernetes cluster mirrors docker.io/quay.io/ghcr.io
 # through docker-group (k3s registries.yaml) — ArgoCD lives on quay.io, so the
 # group needs a quay pull-through as well (Kyverno=ghcr, ESO=ghcr already covered).
 ensure_repo docker proxy quay-proxy "$(jq -n --argjson s "$(storage PERMISSIVE)" --argjson p "$(proxy_block 'https://quay.io')" \
   --argjson c "$(cleanup_of cleanup-docker)" \
-  '{name:"quay-proxy", online:true, storage:$s, cleanup:$c, docker:{forceBasicAuth:true, v1Enabled:false}, dockerProxy:{cacheForeignLayers:false, foreignLayerUrlWhitelist:[]}} + $p')"
+  '{name:"quay-proxy", online:true, storage:$s, cleanup:$c, docker:{forceBasicAuth:true, v1Enabled:false}, dockerProxy:{indexType:"REGISTRY", cacheForeignLayers:false, foreignLayerUrlWhitelist:[]}} + $p')"
 
 log_info "── hosted ──"
 ensure_repo maven hosted maven-releases "$(jq -n --argjson s "$(storage ALLOW_ONCE)" --argjson c "$(cleanup_of '')" \
