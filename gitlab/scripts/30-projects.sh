@@ -19,7 +19,7 @@ load_env; load_gitlab_secrets
 require_cmd jq
 
 get_group_id() { gl_api GET "/groups/$(uri_encode "$1")" | jq -r '.id // empty'; }
-get_user_id()  { gl_api GET "/users?username=$1" | jq -r '.[0].id // empty'; }
+get_user_id()  { gl_api GET "/users?username=$1" | jq -r '.[0]?.id // empty'; }  # .[0]? survives error-object bodies (401/429) instead of killing set -e
 get_project_id() { gl_api GET "/projects/$(uri_encode "$1")" | jq -r '.id // empty'; }
 
 PLATFORM_GROUP_ID="$(get_group_id platform)"; [[ -n "$PLATFORM_GROUP_ID" ]] || die "group 'platform' missing — run 20-users-groups.sh"
@@ -98,14 +98,21 @@ protect_tag    "$GO_PID" "rel-*"
 ensure_member() { # scope(project|group), id, user_id, access_level
   local scope="$1" target="$2" uid="$3" level="$4"
   local code
+  # GitLab semantics: PUT /members/:uid EDITS an existing member and 404s for
+  # non-members; adding requires POST /members. PUT-only silently skipped
+  # every membership (404 → warn) — jenkins-ci would never have gotten
+  # Maintainer on gitops-repository (digest pushes fail without it).
   code="$(gl_api_rc PUT "/${scope}s/${target}/members/${uid}" "$(jq -n --argjson l "$level" '{access_level:$l}')" | head -1)"
+  if [[ "$code" == "404" ]]; then
+    code="$(gl_api_rc POST "/${scope}s/${target}/members" "$(jq -n --argjson u "$uid" --argjson l "$level" '{user_id:$u, access_level:$l}')" | head -1)"
+  fi
   case "$code" in
     200|201) log_ok "member uid=${uid} → ${scope} ${target} (access=${level})" ;;
-    *)       log_warn "membership uid=${uid} → ${scope} ${target} returned HTTP ${code} (already set with different level?)" ;;
+    *)       log_warn "membership uid=${uid} → ${scope} ${target} returned HTTP ${code}" ;;
   esac
 }
-JENKINS_CI_ID="$(get_user_id jenkins-ci)"; [[ -n "$JENKINS_CI_ID" ]] || die "jenkins-ci missing — run 20-users-groups.sh"
-ARGOCD_ID="$(get_user_id argocd)"
+JENKINS_CI_ID="$(get_user_id jenkins-ci || true)"; [[ -n "$JENKINS_CI_ID" ]] || die "jenkins-ci missing — run 20-users-groups.sh"
+ARGOCD_ID="$(get_user_id argocd || true)"; [[ -n "$ARGOCD_ID" ]] || die "argocd missing — run 20-users-groups.sh"
 
 ensure_member project "$SL_PID" "$JENKINS_CI_ID" 20    # Reporter: clone library
 ensure_member project "$GO_PID" "$JENKINS_CI_ID" 40    # Maintainer: commit digest updates to main

@@ -695,12 +695,10 @@ services:
     depends_on:
       loki:
         condition: service_started   # loki image is distroless → no healthcheck possible
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:12345/-/healthy >/dev/null || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 30s
+    # NO healthcheck: the alloy image ships /bin/sh but NO wget/curl — the
+    # CMD-SHELL probe died every cycle ("wget: not found", proven live) while
+    # the service itself runs fine. Probe from a sibling busybox container:
+    #   docker compose exec prometheus wget -qO- http://alloy:12345/-/healthy
     deploy:
       resources:
         limits:
