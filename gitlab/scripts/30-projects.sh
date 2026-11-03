@@ -102,9 +102,9 @@ ensure_member() { # scope(project|group), id, user_id, access_level
   # non-members; adding requires POST /members. PUT-only silently skipped
   # every membership (404 → warn) — jenkins-ci would never have gotten
   # Maintainer on gitops-repository (digest pushes fail without it).
-  code="$(gl_api_rc PUT "/${scope}s/${target}/members/${uid}" "$(jq -n --argjson l "$level" '{access_level:$l}')" | head -1)"
+  code="$(gl_api_rc PUT "/${scope}s/${target}/members/${uid}" "$(jq -n --argjson l "$level" '{access_level:$l}')" | sed -n '1p')"
   if [[ "$code" == "404" ]]; then
-    code="$(gl_api_rc POST "/${scope}s/${target}/members" "$(jq -n --argjson u "$uid" --argjson l "$level" '{user_id:$u, access_level:$l}')" | head -1)"
+    code="$(gl_api_rc POST "/${scope}s/${target}/members" "$(jq -n --argjson u "$uid" --argjson l "$level" '{user_id:$u, access_level:$l}')" | sed -n '1p')"
   fi
   case "$code" in
     200|201) log_ok "member uid=${uid} → ${scope} ${target} (access=${level})" ;;
@@ -123,7 +123,7 @@ ensure_member project "$GO_PID" "$ARGOCD_ID" 20        # Reporter: ArgoCD read-o
 # Premium feature — attempted, gracefully degraded on CE (D-19).
 for pid_name in "${SL_PID}:devsecops-shared-library"; do
   pid="${pid_name%%:*}"; name="${pid_name##*:}"
-  code="$(gl_api_rc POST "/projects/${pid}/approvals" '{"approvals_before_merge":1}' | head -1)"
+  code="$(gl_api_rc POST "/projects/${pid}/approvals" '{"approvals_before_merge":1}' | sed -n '1p')"
   if [[ "$code" == "200" || "$code" == "201" ]]; then
     log_ok "merge approvals (1) configured for ${name}"
   else

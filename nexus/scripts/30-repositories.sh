@@ -32,7 +32,7 @@ ensure_repo() { # format, type, name, json-body
     log_ok "repository '${name}' exists — skipping"
     return 0
   fi
-  code="$(nx_api_rc POST "/repositories/${format}/${type}" "$body" | head -1)"
+  code="$(nx_api_rc POST "/repositories/${format}/${type}" "$body" | sed -n '1p')"
   if [[ "$code" == "201" || "$code" == "200" ]]; then
     log_ok "repository '${name}' created (${format}/${type})"
   else
@@ -129,7 +129,7 @@ if [[ "$CURRENT_MEMBERS" != "$CANONICAL_MEMBERS" ]]; then
     group:{memberNames:$m},
     docker:{forceBasicAuth:true, httpPort:$port, v1Enabled:false}
   }')"
-  CODE="$(nx_api_rc PUT "/repositories/docker/group/docker-group" "$GROUP_UPDATE" | head -1)"
+  CODE="$(nx_api_rc PUT "/repositories/docker/group/docker-group" "$GROUP_UPDATE" | sed -n '1p')"
   if [[ "$CODE" == "204" || "$CODE" == "200" ]]; then
     log_ok "docker-group members synced → ${CANONICAL_MEMBERS}"
   else

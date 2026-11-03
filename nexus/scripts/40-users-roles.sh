@@ -50,10 +50,10 @@ ROLE_BODY="$(jq -n --argjson p "$PRIVILEGES" '{
 }')"
 ROLE_EXISTS="$(nx_api GET "/security/roles" | jq -r '.[] | select(.id=="jenkins-deploy") | .id')"
 if [[ -n "$ROLE_EXISTS" ]]; then
-  CODE="$(nx_api_rc PUT "/security/roles/jenkins-deploy" "$ROLE_BODY" | head -1)"
+  CODE="$(nx_api_rc PUT "/security/roles/jenkins-deploy" "$ROLE_BODY" | sed -n '1p')"
   [[ "$CODE" == "200" || "$CODE" == "204" ]] && log_ok "role 'jenkins-deploy' updated" || die "role update failed (HTTP ${CODE})"
 else
-  CODE="$(nx_api_rc POST "/security/roles" "$ROLE_BODY" | head -1)"
+  CODE="$(nx_api_rc POST "/security/roles" "$ROLE_BODY" | sed -n '1p')"
   [[ "$CODE" == "200" || "$CODE" == "201" ]] && log_ok "role 'jenkins-deploy' created" || die "role creation failed (HTTP ${CODE})"
 fi
 
@@ -66,7 +66,7 @@ if [[ -z "$USER_EXISTS" ]]; then
     userId: "jenkins-ci", firstName: "Jenkins", lastName: "CI",
     emailAddress: $em, password: $pw, status: "active", roles: ["jenkins-deploy"]
   }')"
-  CODE="$(nx_api_rc POST "/security/users" "$USER_BODY" | head -1)"
+  CODE="$(nx_api_rc POST "/security/users" "$USER_BODY" | sed -n '1p')"
   [[ "$CODE" == "200" || "$CODE" == "201" ]] && log_ok "user 'jenkins-ci' created" || die "user creation failed (HTTP ${CODE})"
   append_secret "$ROOT_DIR/secrets/nexus-jenkins.env" "NEXUS_DEPLOY_USER=jenkins-ci"
   append_secret "$ROOT_DIR/secrets/nexus-jenkins.env" "NEXUS_DEPLOY_PASSWORD=${DEPLOY_PASSWORD}"
@@ -85,7 +85,7 @@ else
   USER_UPDATE_BODY="$(jq -n --arg em "jenkins-ci@${PLATFORM_DOMAIN:-localhost}" '{
     userId:"jenkins-ci", firstName:"Jenkins", lastName:"CI",
     emailAddress:$em, status:"active", roles:["jenkins-deploy"]}')"
-  CODE="$(nx_api_rc PUT "/security/users/jenkins-ci" "$USER_UPDATE_BODY" | head -1)"
+  CODE="$(nx_api_rc PUT "/security/users/jenkins-ci" "$USER_UPDATE_BODY" | sed -n '1p')"
   [[ "$CODE" == "200" || "$CODE" == "204" ]] && log_info "jenkins-ci role membership re-asserted" \
     || log_warn "user-update endpoint returned HTTP ${CODE} — if roles diverge, adjust in UI: Security → Users → jenkins-ci"
 fi

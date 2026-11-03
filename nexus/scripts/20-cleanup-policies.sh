@@ -43,13 +43,13 @@ ensure_policy() { # name, format, lastDownloadedMinutes, notes
   }')"
   if [[ -n "$existing_id" ]]; then
     local code
-    code="$(nx_api_rc PUT "/cleanup-policies/${existing_id}" "$body" | head -1)"
+    code="$(nx_api_rc PUT "/cleanup-policies/${existing_id}" "$body" | sed -n '1p')"
     [[ "$code" == "204" || "$code" == "200" ]] \
       && log_ok "cleanup policy '${name}' updated (format=${format}, lastDownloaded=${minutes}m)" \
       || log_warn "cleanup policy '${name}' update failed (HTTP ${code})"
   else
     local code
-    code="$(nx_api_rc POST "/cleanup-policies" "$body" | head -1)"
+    code="$(nx_api_rc POST "/cleanup-policies" "$body" | sed -n '1p')"
     [[ "$code" == "201" || "$code" == "200" ]] \
       && log_ok "cleanup policy '${name}' created (format=${format}, lastDownloaded=${minutes}m)" \
       || die "cleanup policy '${name}' creation failed (HTTP ${code})"
