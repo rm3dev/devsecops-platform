@@ -383,7 +383,9 @@ docker compose exec vault vault operator unseal     # run 3×, pasting a key eac
 ./vault/scripts/40-platform-secrets.sh    # seed secret/platform/{notifications,cosign} from .env/secrets
 ./vault/scripts/50-jenkins-approle.sh     # Jenkins' machine identity: 1h tokens, read-only policy
 ./vault/scripts/60-audit-enable.sh        # audit log → Alloy tails it → Loki (service=vault-audit)
-docker compose up -d jenkins              # picks up secrets/vault-jenkins.env (AppRole creds)
+# env_file is read at container CREATE time — a plain up -d/restart keeps the
+# OLD env; recreate so Jenkins actually sees secrets/vault-jenkins.env:
+docker compose --profile core up -d --force-recreate jenkins
 ```
 
 ✅ **Checkpoint 9:** `docker compose exec vault vault status` shows
@@ -437,7 +439,7 @@ Installs, in order (each a readable, idempotent script under `kubernetes/`):
    port-forward (for smoke tests) — nothing else.
 
 ```bash
-docker compose up -d jenkins    # picks up argocd.env + k8s.env
+docker compose --profile core up -d --force-recreate jenkins  # env_file is read at CREATE time — plain up -d/restart keeps the old env
 kubectl get pods -A | grep -Ev "Running|Completed"   # ✅ empty within ~2 min
 ```
 
@@ -480,7 +482,7 @@ kubectl get pods -n orders-api-dev -o jsonpath='{.items[*].spec.containers[*].im
 # Optional but recommended: fill SMTP_HOST/SLACK_WEBHOOK_URL/TEAMS_WEBHOOK_URL
 # + mailboxes in .env NOW (empty = channel stays disabled, safely):
 ./monitoring/scripts/20-configure-notifications.sh  # wires Alertmanager + Jenkins creds + flags
-docker compose up -d jenkins                        # JCasC picks up webhook creds
+docker compose --profile core up -d --force-recreate jenkins   # JCasC picks up webhook creds (env_file needs recreate)
 ```
 
 **Prove the alerting path end-to-end:**
@@ -677,7 +679,7 @@ app secrets**. Compromise any one → bounded blast radius.
 |---|---|---|
 | pipeline behavior/gates | `jenkins/shared-library/` | push to its GitLab repo (Jenkins reloads per build) |
 | platform defaults (flags, thresholds, envs) | `…/config/platform-config.yaml` | same push |
-| Jenkins system config/credentials | `jenkins/casc/*.yaml` + `secrets/*.env` | `docker compose up -d jenkins` |
+| Jenkins system config/credentials | `jenkins/casc/*.yaml` + `secrets/*.env` | `docker compose --profile core up -d --force-recreate jenkins` (env_file is read at CREATE only) |
 | agent tooling | `jenkins/agents/<x>/Dockerfile` | `./scripts/build-images.sh --agent <x>` + recreate |
 | deployment shape (all services) | `gitops-repository/helm-charts/microservice-standard/` | render-app.sh + commit |
 | one env of one service | `gitops-repository/applications/<svc>/overlays/<env>/` | commit (ArgoCD syncs) |

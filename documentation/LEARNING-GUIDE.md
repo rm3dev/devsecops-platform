@@ -941,7 +941,7 @@ values on and enables only the channels you actually configured.
 #    SLACK_WEBHOOK_URL, TEAMS_WEBHOOK_URL) — or leave empty to watch the
 #    fail-safe skips. Then:
 ./monitoring/scripts/20-configure-notifications.sh
-docker compose up -d jenkins
+docker compose --profile core up -d --force-recreate jenkins   # env_file is read at CREATE time
 
 # 3) Vault hardening chain (vault must be unsealed; VAULT_ROOT_TOKEN in
 #    secrets/vault-root.env):
@@ -1100,7 +1100,7 @@ Then: Grafana → Platform Overview (what's down/burning) → Platform Logs
 |---|---|---|
 | a pipeline stage / gate | `jenkins/shared-library/vars/*.groovy` + `config/platform-config.yaml` | push library (installation §12) |
 | which tools run in builds | `jenkins/agents/<x>/Dockerfile` | `./scripts/build-images.sh --agent <x>` + recreate |
-| Jenkins system config/creds | `jenkins/casc/*.yaml` + `secrets/*.env` | `docker compose up -d jenkins` |
+| Jenkins system config/creds | `jenkins/casc/*.yaml` + `secrets/*.env` | `docker compose --profile core up -d --force-recreate jenkins` (env_file is read at CREATE only) |
 | deployment shape of ALL services | `gitops-repository/helm-charts/microservice-standard/` | render-app + commit (the pipeline does it) |
 | one env's replicas/resources/steps | `applications/<svc>/overlays/<env>/kustomization.yaml` | commit → ArgoCD (never kubectl) |
 | cluster admission rules | `kubernetes/kyverno/policies/` | `kubectl apply` via install scripts |
