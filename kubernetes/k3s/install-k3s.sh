@@ -25,7 +25,7 @@
 set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/scripts/lib/common.sh"
 load_env
-require_cmd curl
+require_cmd curl jq
 
 K3S_VERSION="${K3S_VERSION:-v1.36.5+k3s1}"          # pinned; bump deliberately
 K3S_DIR=/etc/rancher/k3s
@@ -137,21 +137,15 @@ done
 log_ok "K3s ${K3S_VERSION} ready: $(kubectl get nodes --no-headers | awk '{print $1, $5}')"
 
 # --- CoreDNS NodeHosts (pod DNS for the platform names) ------------------------
-# k3s is supposed to sync /etc/hosts into kube-system/node-hosts; on some
-# versions the ConfigMap never appears — CoreDNS then answers NXDOMAIN for
-# every *.PLATFORM_DOMAIN lookup from pods (live: argocd-repo-server could not
-# resolve gitlab for repo add). Guarantee it exists; when newly created,
-# CoreDNS must restart to pick up the optional volume mount.
-if kubectl -n kube-system get configmap node-hosts >/dev/null 2>&1; then
-  kubectl -n kube-system create configmap node-hosts --from-file=NodeHosts=/etc/hosts \
-    --dry-run=client -o yaml | kubectl apply -f - >/dev/null
-else
-  kubectl -n kube-system create configmap node-hosts --from-file=NodeHosts=/etc/hosts >/dev/null
-  kubectl -n kube-system rollout restart deploy/coredns >/dev/null
-  kubectl -n kube-system rollout status deploy/coredns --timeout=120s >/dev/null
-  log_warn "kube-system/node-hosts was MISSING — created from /etc/hosts + coredns restarted"
-fi
-log_ok "CoreDNS NodeHosts in sync (pods resolve the platform names)"
+# k3s serves /etc/hosts to CoreDNS through the NodeHosts data key of the
+# kube-system/coredns ConfigMap (Corefile: hosts /etc/coredns/NodeHosts,
+# reload 15s). On this install the key was absent — pods got NXDOMAIN for
+# every *.PLATFORM_DOMAIN name (live: argocd-repo-server could not resolve
+# gitlab for repo add). Stamp it from /etc/hosts; k3s keeps it in sync on
+# later /etc/hosts changes.
+kubectl -n kube-system patch cm coredns --type merge \
+  -p "$(jq -n --rawfile h /etc/hosts '{data:{NodeHosts:$h}}')" >/dev/null
+log_ok "CoreDNS NodeHosts stamped into kube-system/coredns cm (pods resolve the platform names)"
 
 cat <<EOF
 
