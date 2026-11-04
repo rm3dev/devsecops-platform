@@ -151,7 +151,7 @@ if [[ "${TLS_MODE:-internal-ca}" == "internal-ca" ]]; then
   if argocd cert list 2>/dev/null | grep -q "gitlab.${PLATFORM_DOMAIN}"; then
     log_ok "git TLS trust for gitlab.${PLATFORM_DOMAIN} already present"
   else
-    argocd cert add-git --host "gitlab.${PLATFORM_DOMAIN}" --from-file "$CA_FILE" >/dev/null
+    argocd cert add-tls "gitlab.${PLATFORM_DOMAIN}" --from "$CA_FILE" --upsert >/dev/null
     log_ok "platform CA registered for gitlab.${PLATFORM_DOMAIN}"
   fi
 fi
