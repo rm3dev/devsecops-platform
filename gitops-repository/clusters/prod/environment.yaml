@@ -20,8 +20,13 @@ spec:
   destinations:
     - server: https://kubernetes.default.svc
       namespace: "*-prod"
-  # Applications may NOT create cluster-scoped resources.
-  clusterResourceWhitelist: []
+  # Least privilege: the ONLY cluster-scoped kind an app may create is its
+  # own Namespace — CreateNamespace=true adds it as a sync task, and an empty
+  # whitelist rejects the WHOLE plan ("resource :Namespace is not permitted
+  # in project"). Everything else cluster-scoped stays denied.
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace
   orphanedResources:
     warn: true
 ---
