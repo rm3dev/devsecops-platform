@@ -57,14 +57,16 @@ else
   log_ok "keypair generated → secrets/cosign/{cosign.key,cosign.pub}; env → secrets/cosign.env"
 fi
 
-# Sanity: private key parses and public key matches (cosign inside the image).
-# openssl needs -passin env:COSIGN_PASSWORD — it does NOT read COSIGN_PASSWORD
-# on its own (that env convention is cosign's); without it an encrypted PEM
-# fails with a wall of EncryptedPrivateKeyInfo decoder errors.
+# Sanity: verify with cosign itself, NOT openssl. Cosign encrypts cosign.key
+# with its own scrypt-based PKCS#8 scheme — OpenSSL 3 recognizes the envelope
+# but cannot decrypt it ("unsupported … Input structure: EncryptedPrivateKeyInfo",
+# even with the correct -passin; live-proven twice). `cosign public-key`
+# decrypts with COSIGN_PASSWORD and derives the pubkey; diffing against
+# cosign.pub validates key + stored password + consistency in one shot.
 docker run --rm --user root -v "$KEYS_DIR":/keys -e COSIGN_PASSWORD="$(grep -oP '(?<=^COSIGN_PASSWORD=).*' "$COSIGN_ENV")" \
   --entrypoint sh "$IMAGE" -c \
-  'openssl pkey -in /keys/cosign.key -noout -passin env:COSIGN_PASSWORD >/dev/null 2>&1 || openssl ec -in /keys/cosign.key -noout -passin env:COSIGN_PASSWORD >/dev/null' \
-  && log_ok "private key parses (encrypted PEM, COSIGN_PASSWORD accepted by openssl)" \
+  'cosign public-key --key /keys/cosign.key | diff - /keys/cosign.pub' \
+  && log_ok "keypair verified with cosign: COSIGN_PASSWORD decrypts cosign.key, derived public key matches cosign.pub" \
   || log_warn "private key parse check failed — verify manually before relying on signing"
 
 cat <<EOF
