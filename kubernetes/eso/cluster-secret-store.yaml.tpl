@@ -15,7 +15,7 @@ spec:
       version: v2
       auth:
         kubernetes:
-          path: kubernetes-${K8S_CLUSTER_NAME}   # one auth mount per cluster (multi-cluster)
+          mountPath: kubernetes-${K8S_CLUSTER_NAME}   # one auth mount per cluster (multi-cluster)
           role: eso-reader
           serviceAccountRef:
             name: eso-vault-auth
