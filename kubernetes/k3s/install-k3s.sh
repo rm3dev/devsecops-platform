@@ -43,7 +43,8 @@ fi
 log_info "platform host IP: ${HOST_IP}"
 
 # --- /etc/hosts entries (K3s CoreDNS NodeHosts propagates them to pods) ------
-for svc in gitlab registry vault jenkins sonarqube nexus grafana; do
+SVC_NAMES="gitlab registry vault jenkins sonar sonarqube nexus grafana prometheus alertmanager traefik argocd"
+for svc in $SVC_NAMES; do
   entry="${svc}.${PLATFORM_DOMAIN}"
   if grep -qE "(^|[[:space:]])${entry}([[:space:]]|$)" /etc/hosts; then
     # keep the mapping fresh if the host IP changed
@@ -136,16 +137,35 @@ until kubectl get nodes 2>/dev/null | grep -q " Ready"; do
 done
 log_ok "K3s ${K3S_VERSION} ready: $(kubectl get nodes --no-headers | awk '{print $1, $5}')"
 
-# --- CoreDNS NodeHosts (pod DNS for the platform names) ------------------------
-# k3s serves /etc/hosts to CoreDNS through the NodeHosts data key of the
-# kube-system/coredns ConfigMap (Corefile: hosts /etc/coredns/NodeHosts,
-# reload 15s). On this install the key was absent — pods got NXDOMAIN for
-# every *.PLATFORM_DOMAIN name (live: argocd-repo-server could not resolve
-# gitlab for repo add). Stamp it from /etc/hosts; k3s keeps it in sync on
-# later /etc/hosts changes.
-kubectl -n kube-system patch cm coredns --type merge \
-  -p "$(jq -n --rawfile h /etc/hosts '{data:{NodeHosts:$h}}')" >/dev/null
-log_ok "CoreDNS NodeHosts stamped into kube-system/coredns cm (pods resolve the platform names)"
+# --- cluster DNS for the platform names (durable; k3s-safe) ---------------------
+# The kube-system/coredns cm is MANAGED by the k3s addon controller: manual
+# edits (incl. its NodeHosts key) get reconciled away within minutes — live
+# proof: NodeHosts patched in, pods resolved, key wiped again, NXDOMAIN.
+# The official escape hatch is the coredns-custom cm (mounted at
+# /etc/coredns/custom, imported as *.override by the stock Corefile): a
+# template plugin answering A for every platform hostname with the node IP
+# (+ NODATA for AAAA so dual-stack resolvers don't wander upstream).
+NAMES_RE="($(echo "$SVC_NAMES" | tr ' ' '|'))"
+cat > /tmp/coredns-plat-local.override <<EOF
+template IN A ${PLATFORM_DOMAIN} {
+  match ^${NAMES_RE}\\.${PLATFORM_DOMAIN}\\.\$
+  answer "{{ .Name }} 60 IN A ${HOST_IP}"
+}
+template IN AAAA ${PLATFORM_DOMAIN} {
+  match ^${NAMES_RE}\\.${PLATFORM_DOMAIN}\\.\$
+  rcode NOERROR
+}
+EOF
+APPLY_OUT="$(kubectl -n kube-system create configmap coredns-custom \
+  --from-file=plat-local.override=/tmp/coredns-plat-local.override \
+  --dry-run=client -o yaml | kubectl apply -f -)"
+rm -f /tmp/coredns-plat-local.override
+if [[ "$APPLY_OUT" == *created* || "$APPLY_OUT" == *configured* ]]; then
+  # fresh pods are required to mount the (previously absent) optional volume
+  kubectl -n kube-system rollout restart deploy/coredns >/dev/null
+  kubectl -n kube-system rollout status deploy/coredns --timeout=120s >/dev/null
+fi
+log_ok "coredns-custom template live — pods resolve *.${PLATFORM_DOMAIN} → ${HOST_IP}"
 
 cat <<EOF
 
