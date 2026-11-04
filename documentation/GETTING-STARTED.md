@@ -463,15 +463,23 @@ Pushes the REAL `gitops-repository/` content into GitLab: the
 cascades: **root → projects → ApplicationSets → one Application per
 app-per-environment** — all within ~3 minutes of this push.
 
-✅ **Checkpoint 11:** ArgoCD UI shows `orders-api-dev` as **Synced + Healthy**
-— deployed with zero `kubectl apply` from you. Click in: the resource tree
-(Rollout, Service, PDB, NetworkPolicy, ExternalSecret). Ground truth:
+✅ **Checkpoint 11:** ArgoCD UI shows `orders-api-dev` as **Synced** with
+health **Progressing** — deployed with zero `kubectl apply` from you. The
+seed pods are DENIED by Kyverno (`require-digest-pinning`): the placeholder
+image `registry.devsecops.internal@sha256:0000…` is neither on the platform
+registry nor signed — the supply-chain policy working as designed. The
+FIRST REAL BUILD (Step 11/§14) pushes a signed, digest-pinned image via
+`updateGitOps` and flips the app to **Healthy**. Click in: the resource
+tree (Rollout, Service, PDB, NetworkPolicy, ExternalSecret — the
+ExternalSecret shows Ready and its `db-creds` Secret exists in the
+namespace, proving the Vault→ESO chain end-to-end). Ground truth:
 
 ```bash
 kubectl get rollout,pods -n orders-api-dev
-kubectl get pods -n orders-api-dev -o jsonpath='{.items[*].spec.containers[*].image}'
-#   → ends in @sha256:0000… (the seed placeholder — the FIRST REAL BUILD
-#     replaces it with a genuine digest in Step 11)
+kubectl get rollout orders-api -n orders-api-dev -o jsonpath='{.spec.template.spec.containers[*].image}'
+#   → ends in @sha256:0000… (the seed placeholder — pods stay denied by
+#     Kyverno until the FIRST REAL BUILD replaces it with a genuine signed
+#     digest in Step 11; `kubectl get pods` shows none meanwhile)
 ```
 
 ---
