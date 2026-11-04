@@ -135,6 +135,24 @@ until kubectl get nodes 2>/dev/null | grep -q " Ready"; do
   sleep 5
 done
 log_ok "K3s ${K3S_VERSION} ready: $(kubectl get nodes --no-headers | awk '{print $1, $5}')"
+
+# --- CoreDNS NodeHosts (pod DNS for the platform names) ------------------------
+# k3s is supposed to sync /etc/hosts into kube-system/node-hosts; on some
+# versions the ConfigMap never appears — CoreDNS then answers NXDOMAIN for
+# every *.PLATFORM_DOMAIN lookup from pods (live: argocd-repo-server could not
+# resolve gitlab for repo add). Guarantee it exists; when newly created,
+# CoreDNS must restart to pick up the optional volume mount.
+if kubectl -n kube-system get configmap node-hosts >/dev/null 2>&1; then
+  kubectl -n kube-system create configmap node-hosts --from-file=NodeHosts=/etc/hosts \
+    --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+else
+  kubectl -n kube-system create configmap node-hosts --from-file=NodeHosts=/etc/hosts >/dev/null
+  kubectl -n kube-system rollout restart deploy/coredns >/dev/null
+  kubectl -n kube-system rollout status deploy/coredns --timeout=120s >/dev/null
+  log_warn "kube-system/node-hosts was MISSING — created from /etc/hosts + coredns restarted"
+fi
+log_ok "CoreDNS NodeHosts in sync (pods resolve the platform names)"
+
 cat <<EOF
 
 Next: kubernetes/scripts/00-bootstrap-cluster.sh   (ArgoCD → Kyverno → ESO → Vault)
