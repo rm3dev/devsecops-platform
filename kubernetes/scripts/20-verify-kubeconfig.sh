@@ -155,7 +155,10 @@ can() { KUBECONFIG="$KC_FILE" kubectl auth can-i "$1" "$2" --all-namespaces -q 2
 can get deployments   || die "verifier cannot even GET deployments — RBAC broken"
 ! can delete pods     || die "verifier can DELETE pods — RBAC TOO BROAD"
 ! can create secrets  || die "verifier can CREATE secrets — RBAC TOO BROAD"
-can '*' pods/log      || die "verifier cannot read pod logs"
+# NB: verb '*' in an SSAR only passes if the role literally grants '*' —
+# a read-only role never does. The meaningful check is get on pods/log.
+can get pods/log        || die "verifier cannot read pod logs"
+! can create pods/exec  || die "verifier can EXEC into pods — RBAC TOO BROAD"
 log_ok "RBAC verified: read-only (get/list/watch), no write verbs"
 
 umask 077
