@@ -111,7 +111,15 @@ if [[ -z "$ADMIN_PW" ]] || ! login_argocd "$ADMIN_PW"; then
     ADMIN_PW="$(kubectl -n "$ARGOCD_NS" get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' 2>/dev/null | base64 -d || true)"
     [[ -n "$ADMIN_PW" ]] || { [[ $(date +%s) -lt $deadline ]] || die "initial admin secret never appeared"; sleep 5; }
   done
-  login_argocd "$ADMIN_PW" || die "cannot log in to ArgoCD as admin (stale secrets/argocd.env? delete it and re-run)"
+  # Retry loop: server can lag a few seconds past rollout-Ready (TLS/gRPC init).
+  # Surface the real CLI error on final failure — and note the hash-mismatch
+  # recovery (admin.password null + restart re-derives it from the initial secret).
+  LOGIN_OK=0; LOGIN_ERR=""
+  for _ in $(seq 1 10); do
+    LOGIN_ERR="$(argocd login "${ARGOCD_SERVER_URL#https://}" --insecure --grpc-web --username admin --password "$ADMIN_PW" 2>&1)" && { LOGIN_OK=1; break; }
+    sleep 6
+  done
+  [[ "$LOGIN_OK" == "1" ]] || die "cannot log in to ArgoCD as admin — argocd said: ${LOGIN_ERR} — if Unauthenticated persists, the admin hash and initial secret disagree; recover with: kubectl -n ${ARGOCD_NS} patch secret argocd-secret --type merge -p {data:{admin.password:null,admin.passwordMtime:null}} && kubectl -n ${ARGOCD_NS} rollout restart deploy/argocd-server, then re-run"
   NEW_PW="$(gen_secret)"
   if argocd account update-password --account admin --current-password "$ADMIN_PW" --new-password "$NEW_PW" >/dev/null 2>&1; then
     ADMIN_PW="$NEW_PW"; log_ok "admin password rotated (→ secrets/argocd.env)"
