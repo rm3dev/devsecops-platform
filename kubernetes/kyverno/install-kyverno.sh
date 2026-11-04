@@ -38,7 +38,7 @@ log_info "installing Kyverno ${KYVERNO_VERSION}…"
 kubectl apply -f "$ROOT_DIR/kubernetes/namespaces.yaml" >/dev/null
 INSTALL_YAML="$(mktemp)"; trap 'rm -f "$INSTALL_YAML"' EXIT
 curl -fsSL -o "$INSTALL_YAML" "https://github.com/kyverno/kyverno/releases/download/${KYVERNO_VERSION}/install.yaml"
-kubectl apply -f "$INSTALL_YAML" >/dev/null
+kubectl apply --server-side --force-conflicts -f "$INSTALL_YAML" >/dev/null
 for d in kyverno-admission-controller kyverno-background-controller kyverno-cleanup-controller kyverno-reports-controller; do
   kubectl -n "$KYVERNO_NS" rollout status "deploy/$d" --timeout=300s >/dev/null
   kubectl -n "$KYVERNO_NS" scale "deploy/$d" --replicas="$KYVERNO_REPLICAS" >/dev/null

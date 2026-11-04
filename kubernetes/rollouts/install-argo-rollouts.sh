@@ -32,7 +32,7 @@ log_info "installing Argo Rollouts ${ARGO_ROLLOUTS_VERSION}…"
 INSTALL_YAML="$(mktemp)"; trap 'rm -f "$INSTALL_YAML"' EXIT
 curl -fsSL -o "$INSTALL_YAML" \
   "https://github.com/argoproj/argo-rollouts/releases/download/${ARGO_ROLLOUTS_VERSION}/install.yaml"
-kubectl apply -f "$INSTALL_YAML" >/dev/null
+kubectl apply --server-side --force-conflicts -f "$INSTALL_YAML" >/dev/null
 kubectl -n "$RO_NS" rollout status deploy/argo-rollouts --timeout=300s >/dev/null
 kubectl -n "$RO_NS" scale deploy/argo-rollouts --replicas="$ARGO_ROLLOUTS_REPLICAS" >/dev/null
 log_ok "Argo Rollouts ${ARGO_ROLLOUTS_VERSION} running (replicas=${ARGO_ROLLOUTS_REPLICAS})"

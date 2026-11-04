@@ -67,7 +67,7 @@ kubectl apply -f "$ROOT_DIR/kubernetes/namespaces.yaml" >/dev/null
 INSTALL_YAML="$(mktemp)"
 trap 'rm -f "$INSTALL_YAML"' EXIT
 curl -fsSL -o "$INSTALL_YAML" "https://raw.githubusercontent.com/argoproj/argo-cd/${ARGOCD_VERSION}/manifests/install.yaml"
-kubectl apply -n "$ARGOCD_NS" -f "$INSTALL_YAML" >/dev/null
+kubectl apply --server-side --force-conflicts -n "$ARGOCD_NS" -f "$INSTALL_YAML" >/dev/null
 
 log_info "waiting for ArgoCD rollouts…"
 for d in argocd-server argocd-repo-server argocd-applicationset-controller argocd-notifications-controller argocd-redis; do
