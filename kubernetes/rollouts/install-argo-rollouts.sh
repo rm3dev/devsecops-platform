@@ -39,7 +39,7 @@ grep -q "^kind: Deployment" "$INSTALL_YAML" \
 # upstream install.yaml carries NO Namespace object (live failure:
 # "namespaces argo-rollouts not found") — create it first, idempotently.
 kubectl create namespace "$RO_NS" --dry-run=client -o yaml | kubectl apply -f - >/dev/null
-kubectl apply --server-side --force-conflicts -f "$INSTALL_YAML" >/dev/null
+kubectl apply --server-side --force-conflicts -n "$RO_NS" -f "$INSTALL_YAML" >/dev/null
 kubectl -n "$RO_NS" rollout status deploy/argo-rollouts --timeout=300s >/dev/null
 kubectl -n "$RO_NS" scale deploy/argo-rollouts --replicas="$ARGO_ROLLOUTS_REPLICAS" >/dev/null
 log_ok "Argo Rollouts ${ARGO_ROLLOUTS_VERSION} running (replicas=${ARGO_ROLLOUTS_REPLICAS})"
