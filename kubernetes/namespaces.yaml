@@ -21,6 +21,13 @@ metadata:
   labels:
     app.kubernetes.io/part-of: external-secrets
 ---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: argo-rollouts
+  labels:
+    app.kubernetes.io/part-of: argo-rollouts
+---
 # Read-only verification identity for Jenkins (Phase 9 verifyDeployment)
 apiVersion: v1
 kind: Namespace
