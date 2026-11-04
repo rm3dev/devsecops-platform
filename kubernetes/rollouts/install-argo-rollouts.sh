@@ -30,8 +30,12 @@ kubectl cluster-info >/dev/null 2>&1 || die "kubectl cannot reach a cluster (KUB
 
 log_info "installing Argo Rollouts ${ARGO_ROLLOUTS_VERSION}…"
 INSTALL_YAML="$(mktemp)"; trap 'rm -f "$INSTALL_YAML"' EXIT
-curl -fsSL -o "$INSTALL_YAML" \
+curl --retry 3 --retry-delay 2 -fsSL -o "$INSTALL_YAML" \
   "https://github.com/argoproj/argo-rollouts/releases/download/${ARGO_ROLLOUTS_VERSION}/install.yaml"
+# integrity guard: a truncated download applies a partial bundle and exits 0
+# (live incident: Deployment is the LAST doc — it silently vanished)
+grep -q "^kind: Deployment" "$INSTALL_YAML" \
+  || die "rollouts install.yaml looks truncated (no Deployment) — re-run; check egress to github.com"
 # upstream install.yaml carries NO Namespace object (live failure:
 # "namespaces argo-rollouts not found") — create it first, idempotently.
 kubectl create namespace "$RO_NS" --dry-run=client -o yaml | kubectl apply -f - >/dev/null
