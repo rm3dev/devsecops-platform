@@ -32,3 +32,6 @@ Thumbs.db
 tmp/
 .cache/
 jenkins/agents/common/platform-ca.crt
+
+# local credential cache (never commit)
+.secrets/
