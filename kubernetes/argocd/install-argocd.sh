@@ -162,8 +162,10 @@ REPO_USER=jenkins-ci; REPO_TOKEN="$GITOPS_REPO_TOKEN"
 if [[ -n "${ARGOCD_GIT_TOKEN:-}" && "${ARGOCD_GIT_TOKEN}" != "SET_IN_PHASE_8" ]]; then
   REPO_USER=argocd; REPO_TOKEN="$ARGOCD_GIT_TOKEN"
 fi
-argocd repo rm "$REPO_URL" --hard >/dev/null 2>&1 || true
-argocd repo add "$REPO_URL" --username "$REPO_USER" --password "$REPO_TOKEN" >/dev/null \
+# v3: repo add REFUSES to touch an existing spec without --upsert
+# ("existing repository spec is different; difference in keys Password"),
+# and repo rm silently no-ops — upsert replaces the rm-then-add dance.
+argocd repo add "$REPO_URL" --username "$REPO_USER" --password "$REPO_TOKEN" --upsert >/dev/null \
   || die "argocd repo add failed (user ${REPO_USER}) — is the token valid and gitlab.${PLATFORM_DOMAIN} reachable/trusted from this host?"
 log_ok "gitops-repository registered in ArgoCD as user '${REPO_USER}' (connection validated)"
 
