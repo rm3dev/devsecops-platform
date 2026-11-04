@@ -123,6 +123,10 @@ if [[ -z "$ADMIN_PW" ]] || ! login_argocd "$ADMIN_PW"; then
   NEW_PW="$(gen_secret)"
   if argocd account update-password --account admin --current-password "$ADMIN_PW" --new-password "$NEW_PW" >/dev/null 2>&1; then
     ADMIN_PW="$NEW_PW"; log_ok "admin password rotated (→ secrets/argocd.env)"
+    # persist immediately — if any later step dies, the rotated password
+    # survives in argocd.env and the next run logs in with it (the final
+    # cat > rewrite is idempotent with this value).
+    append_secret "$ARGOCD_ENV" "ARGOCD_ADMIN_PASSWORD=${ADMIN_PW}"
   else
     log_warn "admin password rotation failed (already rotated?) — keeping current password"
   fi
@@ -135,6 +139,9 @@ else
   ARGO_TOKEN="$(argocd account generate-token --account jenkins-cd)"
   [[ -n "$ARGO_TOKEN" ]] || die "failed to generate jenkins-cd token"
   log_ok "jenkins-cd API token generated"
+  # persist immediately — tokens cannot be re-read; losing this to a later
+  # mid-script death means generating yet another one on the next run.
+  append_secret "$ARGOCD_ENV" "ARGOCD_AUTH_TOKEN=${ARGO_TOKEN}"
 fi
 
 # --- git trust: platform CA (internal-ca) + private repo credentials ---------
