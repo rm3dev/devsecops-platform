@@ -74,6 +74,15 @@ Pick a base domain — for a lab, `devops.local` is fine. Every UI is reached as
 echo "127.0.0.1 gitlab.devops.local jenkins.devops.local sonar.devops.local nexus.devops.local vault.devops.local grafana.devops.local prometheus.devops.local alertmanager.devops.local registry.devops.local traefik.devops.local argocd.devops.local" | sudo tee -a /etc/hosts
 ```
 
+Which names actually route: the eight service names (gitlab, jenkins, nexus,
+sonar, vault, grafana, prometheus, alertmanager) serve Web UIs through
+Traefik; `registry.` is the Docker Registry **API** (a browser sees a JSON
+401 — that is healthy, not a website); `traefik.` never routes (dashboard is
+internal-only by design); `argocd.` does NOT route through Traefik either —
+ArgoCD is NodePort-direct at `https://<node-ip>:30443` (D-27). The last two
+are in the line anyway so DNS stays uniform across machines and a future
+Traefik router for ArgoCD needs no hosts changes.
+
 TLS: the platform generates its **own internal CA + wildcard certificate**.
 Browsers will warn until you import `reverse-proxy/certificates/ca.crt`
 (Step 4.6). Kubernetes nodes get this CA automatically (Step 7).
