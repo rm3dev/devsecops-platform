@@ -149,11 +149,13 @@ users:
 EOF
 
 # --- prove the least-privilege boundary --------------------------------------
-can() { KUBECONFIG="$KC_FILE" kubectl auth can-i "$1" "$2" --all-namespaces -q 2>/dev/null || true; }
-[[ "$(can get deployments)"    == "yes" ]] || die "verifier cannot even GET deployments — RBAC broken"
-[[ "$(can delete pods)"        != "yes" ]] || die "verifier can DELETE pods — RBAC TOO BROAD"
-[[ "$(can create secrets)"     != "yes" ]] || die "verifier can CREATE secrets — RBAC TOO BROAD"
-[[ "$(can '*' pods/log)"       == "yes" ]] || die "verifier cannot read pod logs"
+# NOTE: kubectl auth can-i -q prints NOTHING — the answer lives in the exit
+# code (0=allowed, 1=denied). Comparing its stdout to "yes" always fails.
+can() { KUBECONFIG="$KC_FILE" kubectl auth can-i "$1" "$2" --all-namespaces -q 2>/dev/null; }
+can get deployments   || die "verifier cannot even GET deployments — RBAC broken"
+! can delete pods     || die "verifier can DELETE pods — RBAC TOO BROAD"
+! can create secrets  || die "verifier can CREATE secrets — RBAC TOO BROAD"
+can '*' pods/log      || die "verifier cannot read pod logs"
 log_ok "RBAC verified: read-only (get/list/watch), no write verbs"
 
 umask 077
