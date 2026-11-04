@@ -34,6 +34,7 @@ require_cmd jq helm yq curl
 command -v argocd >/dev/null || die "argocd CLI missing on host — see kubernetes/README.md (pinned download one-liner)"
 
 [[ -f "$ROOT_DIR/secrets/gitlab-jenkins.env" ]] && { set -a; source "$ROOT_DIR/secrets/gitlab-jenkins.env"; set +a; }
+[[ -f "$ROOT_DIR/secrets/nexus-jenkins.env" ]] && { set -a; source "$ROOT_DIR/secrets/nexus-jenkins.env"; set +a; }
 [[ "${GITOPS_REPO_TOKEN:-SET_IN_PHASE_8}" != "SET_IN_PHASE_8" ]] \
   || die "GITOPS_REPO_TOKEN placeholder — run: gitlab/scripts/50-gitops-repository.sh"
 [[ "${NEXUS_DEPLOY_PASSWORD:-SET_IN_PHASE_5}" != "SET_IN_PHASE_5" ]] \
