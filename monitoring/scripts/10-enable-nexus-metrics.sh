@@ -25,6 +25,20 @@ require_cmd jq
 PW_FILE="$ROOT_DIR/secrets/prometheus/nexus_metrics_password"
 [[ -f "$PW_FILE" ]] || die "$PW_FILE missing — run scripts/bootstrap.sh first"
 METRICS_PW="$(cat "$PW_FILE")"
+
+# Prometheus runs as nobody (uid 65534, prom/prometheus image default) and reads
+# this file via basic_auth.password_file through a :ro bind mount that preserves
+# host ownership. bootstrap.sh writes it root:root 600 -> permission denied for
+# the scrape. Hand ownership to uid 65534 (root keeps access; mode stays 600).
+if [[ "$(stat -c '%u' "$PW_FILE" 2>/dev/null || echo x)" != "65534" ]]; then
+  if chown 65534:65534 "$PW_FILE" 2>/dev/null; then
+    chmod 600 "$PW_FILE"
+    log_ok "password file ownership -> uid 65534 (prometheus scrape user)"
+  else
+    chmod 644 "$PW_FILE"
+    log_warn "chown to 65534 failed; relaxed file mode to 644 instead"
+  fi
+fi
 METRICS_USER="${NEXUS_METRICS_USER:-metrics}"
 
 wait_for_nexus
