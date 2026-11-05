@@ -30,6 +30,19 @@ METRICS_PW="$(cat "$PW_FILE")"
 # this file via basic_auth.password_file through a :ro bind mount that preserves
 # host ownership. bootstrap.sh writes it root:root 600 -> permission denied for
 # the scrape. Hand ownership to uid 65534 (root keeps access; mode stays 600).
+# The bind mount exposes the DIRECTORY as /etc/prometheus/secrets; if it is
+# root-owned 700 (bootstrap hardening), nobody cannot traverse into it even
+# when the file inside is already owned by 65534. Fix both.
+PW_DIR="$(dirname "$PW_FILE")"
+if [[ "$(stat -c '%u' "$PW_DIR" 2>/dev/null || echo x)" != "65534" ]]; then
+  if chown 65534:65534 "$PW_DIR" 2>/dev/null; then
+    chmod 700 "$PW_DIR"
+    log_ok "secrets/prometheus dir -> uid 65534 mode 700 (traversable by prometheus)"
+  else
+    chmod 711 "$PW_DIR"
+    log_warn "dir chown failed; mode 711 instead (traverse without listing)"
+  fi
+fi
 if [[ "$(stat -c '%u' "$PW_FILE" 2>/dev/null || echo x)" != "65534" ]]; then
   if chown 65534:65534 "$PW_FILE" 2>/dev/null; then
     chmod 600 "$PW_FILE"
