@@ -84,7 +84,7 @@ scrape_configs:
   # Nexus metrics capability (Phase 10) — endpoint requires ANY authenticated
   # user; dedicated zero-privilege 'metrics' account (see script referenced above)
   - job_name: nexus
-    metrics_path: /service/metrics/prometheus
+    metrics_path: /service/rest/metrics/prometheus   # Nexus >= 3.96 moved metrics under /service/rest; the legacy path 301-redirects and the scrape loses its auth header
     basic_auth:
       username: metrics
       password_file: /etc/prometheus/secrets/nexus_metrics_password

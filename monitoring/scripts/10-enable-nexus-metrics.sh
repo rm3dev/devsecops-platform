@@ -29,10 +29,17 @@ METRICS_USER="${NEXUS_METRICS_USER:-metrics}"
 
 wait_for_nexus
 
-# --- 1. metrics capability ---------------------------------------------------
-if nx_api GET "/capabilities" | jq -e '.[] | select(.typeId | test("metrics"))' >/dev/null 2>&1; then
-  log_ok "metrics capability already enabled"
-else
+# --- 1. metrics endpoint ------------------------------------------------------
+# Nexus >= 3.96 REMOVED the metrics capability: /service/rest/metrics/* is
+# built in and requires only ANY authenticated user. Older versions serve
+# /service/metrics/* after enabling the capability (typeId varies by version).
+# Detect the live path instead of guessing; keep the legacy flow as fallback.
+METRICS_PATH=""
+for p in "/service/rest/metrics/prometheus" "/service/metrics/prometheus"; do
+  code="$(nx_compose_exec curl -s -m 8 -o /dev/null -w '%{http_code}' "http://localhost:8081$p" 2>/dev/null || echo 000)"
+  case "$code" in 200|401|403) METRICS_PATH="$p"; break ;; esac
+done
+if [[ -z "$METRICS_PATH" ]]; then
   created=""
   for typeId in "metrics" "nexus:metrics"; do   # typeId differs across NX3 versions
     body="$(jq -n --arg t "$typeId" '{typeId: $t, notes: "Prometheus scrape (monitoring/scripts/10-enable-nexus-metrics.sh)"}')"
@@ -40,8 +47,11 @@ else
       created="$typeId"; break
     fi
   done
-  [[ -n "$created" ]] || die "could not enable the metrics capability (tried typeIds: metrics, nexus:metrics)"
+  [[ -n "$created" ]] || die "no built-in metrics endpoint and capability enable failed (tried typeIds: metrics, nexus:metrics)"
   log_ok "metrics capability enabled (typeId=$created)"
+  METRICS_PATH="/service/metrics/prometheus"
+else
+  log_ok "metrics endpoint built in at $METRICS_PATH (Nexus >= 3.96 - no capability needed)"
 fi
 
 # --- 2. zero-privilege role ---------------------------------------------------
@@ -75,7 +85,7 @@ fi
 
 # --- 4. end-to-end validation -------------------------------------------------
 code="$(nx_compose_exec curl -sS -m 10 -o /dev/null -w '%{http_code}' \
-        -u "$METRICS_USER:$METRICS_PW" "http://localhost:8081/service/metrics/prometheus" || echo 000)"
+        -u "$METRICS_USER:$METRICS_PW" "http://localhost:8081$METRICS_PATH" || echo 000)"
 [[ "$code" == "200" ]] || die "metrics endpoint returned HTTP $code for $METRICS_USER — capability or password mismatch"
 log_ok "Nexus metrics endpoint validated (HTTP 200 as $METRICS_USER)"
 log_info "Prometheus job 'nexus' (nexus:8081) will go UP on next reload: docker compose exec prometheus kill -HUP 1"
