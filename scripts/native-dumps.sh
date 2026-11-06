@@ -91,10 +91,10 @@ if running nexus; then
   if [[ -n "${NEXUS_ADMIN_PASSWORD:-}" ]]; then
     NX="http://localhost:8081/service/rest/v1"
     nxc() { ( cd "$ROOT_DIR" && docker compose exec -T nexus curl -sS -m 300 -u "admin:${NEXUS_ADMIN_PASSWORD}" "$@" ); }
-    task_id="$(nxc "$NX/tasks" | jq -r --arg n "platform-dr-db-backup" '.items[] | select(.name==$n) | .id' | head -1)"
+    task_id="$(nxc "$NX/tasks" | jq -r '[.items[]? | select(.name=="platform-dr-db-backup") | .id] | first // empty')"
     if [[ -z "$task_id" ]]; then
       task_id="$(nxc -X POST "$NX/tasks" -H 'Content-Type: application/json' \
-        -d '{"name":"platform-dr-db-backup","typeId":"db.backup","schedule":null,"attributes":{"location":"/nexus-data/backups/db"}}' \
+        -d '{"type":"db.backup","name":"platform-dr-db-backup","enabled":true,"notificationCondition":"FAILURE","frequency":{"schedule":"manual"},"properties":{"location":"/nexus-data/backups/db"}}' \
         | jq -r '.id // empty')"
       [[ -n "$task_id" ]] && log_ok "nexus db.backup task created ($task_id)"
     fi

@@ -43,7 +43,7 @@ init_repo() {
 run_backup() {
   log "starting backup of /data (excludes: ${BACKUP_EXCLUDES:-none})"
   # shellcheck disable=SC2086
-  restic backup /data $EXCLUDE_ARGS \
+  restic backup --host devsecops-platform /data $EXCLUDE_ARGS \
     --tag devsecops-platform \
     --tag "host-$(hostname)"
   log "applying retention: daily=${KEEP_DAILY} weekly=${KEEP_WEEKLY} monthly=${KEEP_MONTHLY}"

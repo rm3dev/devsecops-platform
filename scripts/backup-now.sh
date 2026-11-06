@@ -31,7 +31,7 @@ log_info "restic snapshot → $REPO (tag manual-$TS)"
 ( cd "$ROOT_DIR" && docker compose run --rm \
     -e RESTIC_REPOSITORY="$REPO" \
     --entrypoint restic backup \
-    backup /data \
+    backup --host devsecops-platform /data \
     --exclude /data/buildkit-cache --exclude /data/agent-workspaces --exclude /data/docker \
     --tag devsecops-platform --tag "manual-$TS" ) \
   || die "restic snapshot FAILED"
