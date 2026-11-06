@@ -241,7 +241,8 @@ docker compose --profile monitoring up -d
 #   prometheus alertmanager grafana loki alloy node-exporter cadvisor
 
 # Layer 3 — the workers + insurance
-docker compose --profile agents up -d      # agent-general/python/security (warm pool)
+# Agents depend on Jenkins in the core profile; enable both profiles together.
+docker compose --profile core --profile agents up -d  # agent-general/python/security (warm pool)
 docker compose --profile backup up -d      # restic backup loop
 docker compose --profile build up -d       # buildkitd + docker-socket-proxy
 ```
