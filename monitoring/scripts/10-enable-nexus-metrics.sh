@@ -97,16 +97,31 @@ case "$code" in
 esac
 
 # --- 3. metrics user ----------------------------------------------------------
+# Nexus 3.96 renamed the field: emailAddress. The old name 'email' is silently
+# ignored by 3.96 -> 400 "PARAMETER emailAddress must not be empty" -> the user
+# was never created and every Prometheus scrape 401'd (then hit the auth rate
+# limiter -> 429). Send BOTH spellings for cross-version compatibility, and
+# CHECK the HTTP code: nx_api exits 0 even on 4xx (curl without -f), which is
+# how this failure stayed invisible for four runs.
 user_body="$(jq -n --arg u "$METRICS_USER" --arg p "$METRICS_PW" --arg d "$PLATFORM_DOMAIN" '{
   userId: $u, firstName: "Prometheus", lastName: "Scrape",
-  email: ($u + "@" + $d), password: $p, status: "active",
+  email: ($u + "@" + $d), emailAddress: ($u + "@" + $d), password: $p, status: "active",
   roles: ["monitoring-metrics"]
 }')"
+nx_user_call() { # METHOD PATH -> ok, or die showing code + response body
+  local out code body
+  out="$(nx_api_rc "$1" "$2" "$user_body")"
+  code="${out%%$'\n'*}"; body="${out#*$'\n'}"
+  case "$code" in
+    200|201|204) return 0 ;;
+    *) die "user '$METRICS_USER' $1 $2 failed: HTTP $code - $body" ;;
+  esac
+}
 if nx_api GET "/security/users?userId=$METRICS_USER" | jq -e --arg u "$METRICS_USER" '.[] | select(.userId==$u)' >/dev/null 2>&1; then
-  nx_api PUT "/security/users/$METRICS_USER" "$user_body" >/dev/null
-  log_ok "user $METRICS_USER exists — password/roles refreshed"
+  nx_user_call PUT "/security/users/$METRICS_USER"
+  log_ok "user $METRICS_USER exists - password/roles refreshed"
 else
-  nx_api POST "/security/users" "$user_body" >/dev/null
+  nx_user_call POST "/security/users"
   log_ok "user $METRICS_USER created"
 fi
 
