@@ -1,0 +1,12 @@
+// =============================================================================
+// orders-api - standard platform pipeline (master spec §8): every microservice
+// repository uses exactly this Jenkinsfile; per-service tuning belongs in an
+// optional .devsecops.yaml, never in pipeline code.
+// =============================================================================
+@Library('devsecops-shared-library') _
+
+microservicePipeline(
+    serviceName: 'orders-api',
+    deploymentType: 'helm',
+    environments: ['dev', 'qa', 'uat', 'prod']
+)

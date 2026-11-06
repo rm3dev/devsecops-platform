@@ -543,17 +543,30 @@ Full DR procedures: `backup-recovery.md`.
 
 ## 14. Step 11 — Your first end-to-end deployment 🎉
 
-The sample service repo (orders-api) was seeded into GitLab in Step 5.1.
+Seed the sample service **one time** (idempotent). This creates
+`teams/orders/orders-api` in GitLab, pushes the stdlib-Python sample app +
+standard Jenkinsfile, and repoints `applications/orders-api` in the LIVE
+gitops-repository from the `registry.devsecops.internal` seed placeholder to
+`registry.<domain>` — required because `pinDigest` matches `images[].name`
+against the built image and Kyverno only pins/verifies `registry.<domain>/*@sha256:*`:
 
 ```bash
-# 1. make a trivial change
-git clone http://gitlab.<domain>/<team>/orders-api.git && cd orders-api
-echo "# touched $(date)" >> README.md
-git commit -am "first platform run" && git push
+./gitlab/scripts/45-seed-orders-api.sh
+```
 
-# 2. watch Jenkins (webhook fires; if not: Jenkins → the multibranch job →
-#    "Scan Multibranch Pipeline Now")
-#    https://jenkins.<domain> → your team folder → orders-api → main → Console
+```bash
+# 1. trigger discovery + the first build (pick ONE):
+#    a) Jenkins UI → teams → orders → "Scan Multibranch Pipeline Now"
+#       (first discovery of main auto-starts the build)
+#    b) or make a trivial change and let the webhook/hourly scan fire:
+#       browser: GitLab → teams/orders/orders-api → README.md → Edit →
+#                append a line → Commit to main   (no local git needed)
+#       terminal: git clone https://gitlab.<domain>/teams/orders/orders-api.git
+#                 && cd orders-api && echo "# touched $(date)" >> README.md
+#                 && git commit -am "first platform run" && git push
+
+# 2. watch Jenkins
+#    https://jenkins.<domain> → teams → orders → orders-api → main → Console
 ```
 
 **What you should see, stage by stage** (~8–15 min first run; caches are cold):

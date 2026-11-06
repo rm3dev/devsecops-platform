@@ -1,0 +1,3 @@
+# orders-api has ZERO runtime dependencies (Python stdlib only).
+# This file is the language marker for detectProject.groovy
+# ('requirements*.txt' -> python/pip) and keeps the build stage deterministic.
