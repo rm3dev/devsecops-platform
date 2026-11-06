@@ -18,6 +18,9 @@
 set -uo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/lib/common.sh"
 load_env
+# common.sh forces 'set -Eeuo pipefail'; this script must NOT die mid-sequence
+# (every component is optional, partial dumps beat nothing) -> drop errexit.
+set +e
 
 DATA_ROOT="${DATA_ROOT:?DATA_ROOT must be set (.env)}"
 TS="$(date -u +%Y%m%dT%H%M%SZ)"
@@ -29,7 +32,11 @@ running() { ( cd "$ROOT_DIR" && docker compose ps --status running --services 2>
 prune_keep() { # dir glob keep — delete oldest beyond N
   local dir="$1" glob="$2" keep="$3" f
   mapfile -t f < <(ls -1t "$dir"/$glob 2>/dev/null | tail -n +$((keep + 1)))
-  [[ ${#f[@]} -gt 0 ]] && rm -f "${f[@]}" && log_info "pruned ${#f[@]} old dump(s) in $dir"
+  if [[ ${#f[@]} -gt 0 ]]; then
+    rm -f "${f[@]}"
+    log_info "pruned ${#f[@]} old dump(s) in $dir"
+  fi
+  return 0   # never hand the caller a non-zero status just because there was nothing to prune
 }
 
 # --- 1. Vault raft snapshot -----------------------------------------------------
