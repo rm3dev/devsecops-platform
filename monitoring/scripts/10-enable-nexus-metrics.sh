@@ -4,8 +4,8 @@
 #
 # Three idempotent actions:
 #   1. enable the Nexus "metrics" capability (/service/metrics/prometheus)
-#   2. create role  'monitoring-metrics' — ZERO repository/admin privileges
-#      (the metrics endpoint only requires ANY authenticated user)
+#   2. create role  'monitoring-metrics' - least privilege: only the
+#      built-in 'nx-metrics-all' (required by /service/rest/metrics/*)
 #   3. create user  ${NEXUS_METRICS_USER:-metrics} with the password bootstrap
 #      generated into secrets/prometheus/nexus_metrics_password (Prometheus
 #      reads that exact file via basic_auth.password_file)
@@ -82,12 +82,15 @@ else
   log_ok "metrics endpoint built in at $METRICS_PATH (Nexus >= 3.96 - no capability needed)"
 fi
 
-# --- 2. zero-privilege role ---------------------------------------------------
+# --- 2. least-privilege role --------------------------------------------------
+# /service/rest/metrics/* requires admin OR the built-in 'nx-metrics-all'
+# privilege (Sonatype docs - same was true for the legacy /service/metrics/*).
+# The old zero-privilege role authenticated fine but got 403 Forbidden.
 role_body="$(jq -n '{
   id: "monitoring-metrics",
   name: "Monitoring metrics reader",
-  description: "Zero-privilege role; existence of an authenticated session is all /service/metrics requires. Managed by monitoring/scripts/10-enable-nexus-metrics.sh",
-  privileges: [],
+  description: "Least-privilege role for the Prometheus scrape: nx-metrics-all only. Managed by monitoring/scripts/10-enable-nexus-metrics.sh",
+  privileges: ["nx-metrics-all"],
   roles: []
 }')"
 # No '| head -1' here: nx_api_rc prints code THEN runs a slow 'docker exec cat'
@@ -97,8 +100,14 @@ role_resp="$(nx_api_rc POST "/security/roles" "$role_body" || true)"
 code="${role_resp%%$'\n'*}"
 case "$code" in
   200|201) log_ok "role monitoring-metrics created" ;;
-  409)     log_ok "role monitoring-metrics exists" ;;
-  *)       nx_api PUT "/security/roles/monitoring-metrics" "$role_body" >/dev/null; log_ok "role monitoring-metrics updated" ;;
+  *)
+    put_resp="$(nx_api_rc PUT "/security/roles/monitoring-metrics" "$role_body" || true)"
+    put_code="${put_resp%%$'\n'*}"
+    case "$put_code" in
+      200|204) log_ok "role monitoring-metrics updated (privilege nx-metrics-all)" ;;
+      *) die "role monitoring-metrics update failed: HTTP $put_code - ${put_resp#*$'\n'}" ;;
+    esac
+    ;;
 esac
 
 # --- 3. metrics user ----------------------------------------------------------
