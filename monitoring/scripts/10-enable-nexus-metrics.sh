@@ -115,11 +115,13 @@ esac
 # ignored by 3.96 -> 400 "PARAMETER emailAddress must not be empty" -> the user
 # was never created and every Prometheus scrape 401'd (then hit the auth rate
 # limiter -> 429). Send BOTH spellings for cross-version compatibility, and
+# 3.96 also requires 'source' ("default" = local realm) on PUT /security/users.
 # CHECK the HTTP code: nx_api exits 0 even on 4xx (curl without -f), which is
 # how this failure stayed invisible for four runs.
 user_body="$(jq -n --arg u "$METRICS_USER" --arg p "$METRICS_PW" --arg d "$PLATFORM_DOMAIN" '{
   userId: $u, firstName: "Prometheus", lastName: "Scrape",
   email: ($u + "@" + $d), emailAddress: ($u + "@" + $d), password: $p, status: "active",
+  source: "default",
   roles: ["monitoring-metrics"]
 }')"
 nx_user_call() { # METHOD PATH -> ok, or die showing code + response body
