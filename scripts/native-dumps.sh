@@ -93,12 +93,24 @@ if running nexus; then
     nxc() { ( cd "$ROOT_DIR" && docker compose exec -T nexus curl -sS -m 300 -u "admin:${NEXUS_ADMIN_PASSWORD}" "$@" ); }
     task_id="$(nxc "$NX/tasks" | jq -r '[.items[]? | select(.name=="platform-dr-db-backup") | .id] | first // empty')"
     if [[ -z "$task_id" ]]; then
-      task_id="$(nxc -X POST "$NX/tasks" -H 'Content-Type: application/json' \
+      create_out="$(nxc -X POST "$NX/tasks" -H 'Content-Type: application/json' \
         -d '{"type":"db.backup","name":"platform-dr-db-backup","enabled":true,"notificationCondition":"FAILURE","frequency":{"schedule":"manual"},"properties":{"location":"/nexus-data/backups/db"}}' \
-        | jq -r '.id // empty')"
-      [[ -n "$task_id" ]] && log_ok "nexus db.backup task created ($task_id)"
+        -w '\n%{http_code}')"
+      create_body="${create_out%$'\n'*}"
+      task_id="$(jq -r '.id // empty' <<<"$create_body" 2>/dev/null)"
+      if [[ -n "$task_id" ]]; then
+        log_ok "nexus db.backup task created ($task_id)"
+      elif grep -qi "invalid task type" <<<"$create_body"; then
+        # This Nexus (3.96, post-OrientDB) no longer offers the db.backup task
+        # type at all; the DR path for Nexus is restic's file-level capture of
+        # nexus-data (database files included). Warn - don't fail every cycle.
+        log_warn "nexus db.backup task type unavailable in this Nexus version - relying on restic file-level capture of nexus-data"
+        task_id="SKIP"
+      fi
     fi
-    if [[ -n "$task_id" ]]; then
+    if [[ "$task_id" == "SKIP" ]]; then
+      :   # db.backup type unavailable in this Nexus version - warned above
+    elif [[ -n "$task_id" ]]; then
       nxc -X POST "$NX/tasks/$task_id/run" >/dev/null
       for _ in $(seq 1 60); do   # ≤10 min
         st="$(nxc "$NX/tasks/$task_id" | jq -r '.lastRunResult // "PENDING"')"
