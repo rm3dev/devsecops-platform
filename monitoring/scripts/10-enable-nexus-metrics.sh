@@ -70,7 +70,8 @@ if [[ -z "$METRICS_PATH" ]]; then
   created=""
   for typeId in "metrics" "nexus:metrics"; do   # typeId differs across NX3 versions
     body="$(jq -n --arg t "$typeId" '{typeId: $t, notes: "Prometheus scrape (monitoring/scripts/10-enable-nexus-metrics.sh)"}')"
-    if nx_api_rc POST "/capabilities" "$body" | head -1 | grep -qE "^(200|201)"; then
+    cap_resp="$(nx_api_rc POST "/capabilities" "$body" || true)"   # no |head: SIGPIPE trap
+    if [[ "${cap_resp%%$'\n'*}" =~ ^(200|201) ]]; then
       created="$typeId"; break
     fi
   done
@@ -89,7 +90,11 @@ role_body="$(jq -n '{
   privileges: [],
   roles: []
 }')"
-code="$(nx_api_rc POST "/security/roles" "$role_body" | head -1)"
+# No '| head -1' here: nx_api_rc prints code THEN runs a slow 'docker exec cat'
+# for the body; head exits after line 1, cat dies of SIGPIPE (141), pipefail +
+# set -e kill the script SILENTLY. Capture everything, split with expansion.
+role_resp="$(nx_api_rc POST "/security/roles" "$role_body" || true)"
+code="${role_resp%%$'\n'*}"
 case "$code" in
   200|201) log_ok "role monitoring-metrics created" ;;
   409)     log_ok "role monitoring-metrics exists" ;;
