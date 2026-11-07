@@ -115,6 +115,7 @@ jobs:
               builds: [[projectId: 'platform/devsecops-shared-library', revisionHash: sha]]) {
               def text = readFile('src/org/company/devsecops/PlatformConfig.groovy')
               def policyText = readFile('src/org/company/devsecops/SecurityPolicy.groovy')
+              def detectText = readFile('vars/detectProject.groovy')
               if (!fileExists('resources/config/platform-config.yaml') ||
                   !fileExists('resources/security-policy-default.yaml'))
                   error('Required shared-library resources are missing')
@@ -129,6 +130,10 @@ jobs:
                   !policyText.contains("libraryResource('security-policy-default.yaml')") ||
                   !(platformYaml instanceof Map) || !(policyYaml.security instanceof Map))
                   error('Shared-library source/resource validation failed')
+              if (!detectText.contains('List<String> changedPaths = []') ||
+                  !detectText.contains('String normalizedPath = path.trim()') ||
+                  detectText.contains('*.trim()'))
+                  error('detectProject CPS-safe path parsing validation failed')
               echo('Validation passed; MR source was not executed')
           }
       }
