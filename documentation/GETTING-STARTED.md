@@ -715,6 +715,7 @@ app secrets**. Compromise any one → bounded blast radius.
 | Change… | Edit… | Apply with… |
 |---|---|---|
 | pipeline behavior/gates | `jenkins/shared-library/` | push to its GitLab repo (Jenkins reloads per build) |
+| shared-library MR gate | `platform/shared-library-mr-validator` in Jenkins | Build with the MR source branch + exact SHA; it reports an external GitLab status without executing MR code |
 | platform defaults (flags, thresholds, envs) | `…/config/platform-config.yaml` | same push |
 | Jenkins system config/credentials | `jenkins/casc/*.yaml` + `secrets/*.env` | `docker compose --profile core up -d --force-recreate jenkins` (env_file is read at CREATE only) |
 | agent tooling | `jenkins/agents/<x>/Dockerfile` | `./scripts/build-images.sh --agent <x>` + recreate |

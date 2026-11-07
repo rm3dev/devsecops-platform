@@ -84,6 +84,71 @@ jobs:
           }
       }
 
+  # Manual, trusted validator for shared-library merge requests. The pipeline
+  # definition is managed here (not loaded from the MR), uses read-only checkout,
+  # checks source text without executing it, and reports status via GitLab external CI.
+  - script: |
+      pipelineJob('platform/shared-library-mr-validator') {
+          displayName('Shared library MR validator')
+          description('Trusted, read-only validation of a shared-library MR commit. Does not execute source from the MR. Reports status to GitLab project platform/devsecops-shared-library.')
+          parameters {
+              stringParam('SOURCE_BRANCH', 'fix-platform-config-constructor', 'MR source branch')
+              stringParam('SOURCE_SHA', '', 'Exact 40-character commit SHA from the MR source branch')
+          }
+          logRotator { daysToKeep(30) }
+          definition {
+              cps {
+                  sandbox(true)
+                  script('''
+      def sourceBranch = params.SOURCE_BRANCH?.trim()
+      def sourceSha = params.SOURCE_SHA?.trim()
+      if (!sourceBranch || !(sourceBranch ==~ /[A-Za-z0-9._\/-]+/)) {
+          error('SOURCE_BRANCH must contain only letters, digits, dot, underscore, slash, or hyphen')
+      }
+      if (!sourceSha || !(sourceSha ==~ /[0-9a-f]{40}/)) {
+          error('SOURCE_SHA must be a full 40-character lowercase commit SHA')
+      }
+      node('general') {
+          deleteDir()
+          stage('Checkout pinned MR commit') {
+              checkout([$class: 'GitSCM',
+                  branches: [[name: '*/' + sourceBranch]],
+                  userRemoteConfigs: [[
+                      url: 'http://gitlab/platform/devsecops-shared-library.git',
+                      credentialsId: 'gitlab-library-readonly'
+                  ]]
+              ])
+              def actualSha = sh(script: 'git rev-parse HEAD', returnStdout: true).trim()
+              if (actualSha != sourceSha) {
+                  error('Checked out SHA does not match SOURCE_SHA; refresh the MR parameters and retry')
+              }
+          }
+          gitlabCommitStatus(name: 'shared-library-validation',
+              connection: gitLabConnection('gitlab'),
+              builds: [[projectId: 'platform/devsecops-shared-library', revisionHash: sourceSha]]) {
+              stage('Validate PlatformConfig constructor') {
+                  def sourceText = readFile('src/org/company/devsecops/PlatformConfig.groovy')
+                  def required = [
+                      "PlatformConfig(script, String servicePath = '.')",
+                      'this.script = script',
+                      'this.servicePath = servicePath',
+                      "new PlatformConfig(script, args.servicePath ?: '.')"
+                  ]
+                  if (!required.every { sourceText.contains(it) }) {
+                      error('PlatformConfig explicit constructor checks failed')
+                  }
+                  if (sourceText.contains("new PlatformConfig(script: script, servicePath: args.servicePath ?: '.')")) {
+                      error('Obsolete map-style constructor remains')
+                  }
+                  echo('PlatformConfig source checks passed; MR source was not executed')
+              }
+          }
+      }
+                  ''')
+              }
+          }
+      }
+
   # ---------------------------------------------------------------------------
   # Phase 8 (D-12/D-26): digest promotion — the ONLY path to qa/uat/prod.
   # The same scanned+signed digest moves environment→environment; artifacts are
