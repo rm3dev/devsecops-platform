@@ -217,7 +217,11 @@ private List<Map> filterChanged(List<Map> services, String baseRef, PipelineLogg
         log.info('Discovery', "no file changes between ${base} and HEAD — building everything")
         return services
     }
-    List<String> changedPaths = changed.split('\n')*.trim().findAll { it }
+    List<String> changedPaths = []
+    for (String path : changed.split('\n')) {
+        String normalizedPath = path.trim()
+        if (normalizedPath) { changedPaths.add(normalizedPath) }
+    }
     log.info('Discovery', "${changedPaths.size()} changed path(s) since ${base.take(8)}")
 
     List<Map> selected = []
