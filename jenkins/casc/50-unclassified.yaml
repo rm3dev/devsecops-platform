@@ -21,7 +21,7 @@ unclassified:
             scm:
               git:
                 remote: "http://gitlab/platform/devsecops-shared-library.git"
-                credentialsId: "gitlab-jenkins-user"
+                credentialsId: "gitlab-library-readonly"
 
   # GitLab connection used by GitLab Branch Source + commit status + MR notes
   gitLabConnectionConfig:
