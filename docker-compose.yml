@@ -292,6 +292,10 @@ services:
       JENKINS_INTERNAL_URL: ${JENKINS_URL}
       # steps read env.PLATFORM_DOMAIN ON THE AGENT (registry host, GitOps URLs)
       PLATFORM_DOMAIN: ${PLATFORM_DOMAIN}
+      # Route advertised public GitLab clone URLs over the internal service network.
+      GIT_CONFIG_COUNT: "1"
+      GIT_CONFIG_KEY_0: "url.http://gitlab/.insteadOf"
+      GIT_CONFIG_VALUE_0: "https://gitlab.${PLATFORM_DOMAIN}/"
       TZ: ${TZ}
     volumes:
       - ${DATA_ROOT}/agent-workspaces/agent-general:/home/jenkins/agent
@@ -329,6 +333,10 @@ services:
       DEVSECOPS_AGENT_NAME: agent-python
       JENKINS_INTERNAL_URL: ${JENKINS_URL}
       PLATFORM_DOMAIN: ${PLATFORM_DOMAIN}
+      # Route advertised public GitLab clone URLs over the internal service network.
+      GIT_CONFIG_COUNT: "1"
+      GIT_CONFIG_KEY_0: "url.http://gitlab/.insteadOf"
+      GIT_CONFIG_VALUE_0: "https://gitlab.${PLATFORM_DOMAIN}/"
       TZ: ${TZ}
     volumes:
       - ${DATA_ROOT}/agent-workspaces/agent-python:/home/jenkins/agent
@@ -365,6 +373,10 @@ services:
       JENKINS_INTERNAL_URL: ${JENKINS_URL}
       # steps read env.PLATFORM_DOMAIN ON THE AGENT (registry host, RegistryAuth)
       PLATFORM_DOMAIN: ${PLATFORM_DOMAIN}
+      # Route advertised public GitLab clone URLs over the internal service network.
+      GIT_CONFIG_COUNT: "1"
+      GIT_CONFIG_KEY_0: "url.http://gitlab/.insteadOf"
+      GIT_CONFIG_VALUE_0: "https://gitlab.${PLATFORM_DOMAIN}/"
       TZ: ${TZ}
     volumes:
       - ${DATA_ROOT}/agent-workspaces/agent-security:/home/jenkins/agent

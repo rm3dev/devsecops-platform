@@ -17,14 +17,6 @@ set -euo pipefail
 JENKINS_INTERNAL_URL="${JENKINS_INTERNAL_URL:-http://jenkins:8080}"
 AUTH=(-u "${JENKINS_ADMIN_USER}:${JENKINS_ADMIN_PASSWORD}")
 
-# GitLab advertises its public HTTPS clone URL, which is unreachable from the
-# isolated agents plane. Rewrite that prefix to the GitLab service DNS name; the
-# group-scoped read-only checkout credential is still supplied by Jenkins.
-if [[ -n "${PLATFORM_DOMAIN:-}" ]] && command -v git >/dev/null 2>&1; then
-  git config --global --replace-all \
-    "url.http://gitlab/.insteadOf" "https://gitlab.${PLATFORM_DOMAIN}/"
-fi
-
 log() { echo "[agent:${DEVSECOPS_AGENT_NAME}] $*"; }
 
 log "waiting for Jenkins controller at ${JENKINS_INTERNAL_URL} …"
