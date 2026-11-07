@@ -288,7 +288,7 @@ services:
       - ./secrets/argocd.env
       - ./secrets/k8s.env
     environment:
-      AGENT_NAME: agent-general
+      DEVSECOPS_AGENT_NAME: agent-general
       JENKINS_INTERNAL_URL: ${JENKINS_URL}
       # steps read env.PLATFORM_DOMAIN ON THE AGENT (registry host, GitOps URLs)
       PLATFORM_DOMAIN: ${PLATFORM_DOMAIN}
@@ -326,7 +326,7 @@ services:
     env_file:
       - ./secrets/jenkins.env
     environment:
-      AGENT_NAME: agent-python
+      DEVSECOPS_AGENT_NAME: agent-python
       JENKINS_INTERNAL_URL: ${JENKINS_URL}
       TZ: ${TZ}
     volumes:
@@ -360,7 +360,7 @@ services:
     env_file:
       - ./secrets/jenkins.env
     environment:
-      AGENT_NAME: agent-security
+      DEVSECOPS_AGENT_NAME: agent-security
       JENKINS_INTERNAL_URL: ${JENKINS_URL}
       # steps read env.PLATFORM_DOMAIN ON THE AGENT (registry host, RegistryAuth)
       PLATFORM_DOMAIN: ${PLATFORM_DOMAIN}

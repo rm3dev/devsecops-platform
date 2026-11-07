@@ -11,26 +11,26 @@
 # =============================================================================
 set -euo pipefail
 
-: "${AGENT_NAME:?AGENT_NAME must be set (compose service environment)}"
+: "${DEVSECOPS_AGENT_NAME:?DEVSECOPS_AGENT_NAME must be set (compose service environment)}"
 : "${JENKINS_ADMIN_USER:?JENKINS_ADMIN_USER must be set (secrets/jenkins.env)}"
 : "${JENKINS_ADMIN_PASSWORD:?JENKINS_ADMIN_PASSWORD must be set (secrets/jenkins.env)}"
 JENKINS_INTERNAL_URL="${JENKINS_INTERNAL_URL:-http://jenkins:8080}"
 AUTH=(-u "${JENKINS_ADMIN_USER}:${JENKINS_ADMIN_PASSWORD}")
 
-log() { echo "[agent:${AGENT_NAME}] $*"; }
+log() { echo "[agent:${DEVSECOPS_AGENT_NAME}] $*"; }
 
 log "waiting for Jenkins controller at ${JENKINS_INTERNAL_URL} …"
 until curl -fsS --max-time 10 "${AUTH[@]}" -o /dev/null "${JENKINS_INTERNAL_URL}/login"; do
   sleep 10
 done
 
-log "waiting for node '${AGENT_NAME}' to be registered (JCasC 40-nodes.yaml) …"
-until curl -fsS --max-time 10 "${AUTH[@]}" -o /dev/null "${JENKINS_INTERNAL_URL}/computer/${AGENT_NAME}/api/json"; do
+log "waiting for node '${DEVSECOPS_AGENT_NAME}' to be registered (JCasC 40-nodes.yaml) …"
+until curl -fsS --max-time 10 "${AUTH[@]}" -o /dev/null "${JENKINS_INTERNAL_URL}/computer/${DEVSECOPS_AGENT_NAME}/api/json"; do
   sleep 10
 done
 
 log "fetching agent secret …"
-JNLP="$(curl -fsS --max-time 15 "${AUTH[@]}" "${JENKINS_INTERNAL_URL}/computer/${AGENT_NAME}/jenkins-agent.jnlp")"
+JNLP="$(curl -fsS --max-time 15 "${AUTH[@]}" "${JENKINS_INTERNAL_URL}/computer/${DEVSECOPS_AGENT_NAME}/jenkins-agent.jnlp")"
 SECRET="$(grep -oE '<argument>[^<]+</argument>' <<< "$JNLP" | head -1 | sed -E 's|</?argument>||g')"
 if [[ -z "$SECRET" ]]; then
   log "ERROR: could not extract agent secret — is the node configured as inbound (JNLP)?"
@@ -40,6 +40,6 @@ fi
 log "connecting (workDir=/home/jenkins/agent) …"
 exec jenkins-agent \
   -url "${JENKINS_INTERNAL_URL}/" \
-  -name "${AGENT_NAME}" \
+  -name "${DEVSECOPS_AGENT_NAME}" \
   -secret "${SECRET}" \
   -workDir /home/jenkins/agent
