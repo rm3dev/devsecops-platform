@@ -27,8 +27,13 @@ class PlatformConfig implements Serializable {
     Map project = [:]
     String servicePath
 
+    PlatformConfig(script, String servicePath = '.') {
+        this.script = script
+        this.servicePath = servicePath
+    }
+
     static PlatformConfig load(script, Map args = [:]) {
-        def cfg = new PlatformConfig(script: script, servicePath: args.servicePath ?: '.')
+        def cfg = new PlatformConfig(script, args.servicePath ?: '.')
         cfg.platform = script.readYaml(text: script.libraryResource('config/platform-config.yaml'))
 
         def overrideFile = args.configFile ?: "${cfg.servicePath == '.' ? '' : cfg.servicePath + '/'}devsecops.yaml"
