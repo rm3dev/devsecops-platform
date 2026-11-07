@@ -5,8 +5,8 @@
 #   ./gitlab/scripts/run-all.sh
 #
 # Sequence: wait for GitLab → root PAT → groups/users/PATs → projects +
-# protection + memberships → seed repositories → project-scoped shared-library
-# deploy token → webhook on the shared library → GitLab↔Jenkins connectivity check.
+# protection + memberships → seed repositories → project-scoped library token +
+# group-scoped read-only team checkout token → webhook → connectivity check.
 # =============================================================================
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/scripts/lib/common.sh"
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/gitlab-api.sh"
@@ -26,6 +26,7 @@ echo "${C_BOLD}== Phase 4: GitLab provisioning ==${C_RESET}"
 # (idempotent; preserves CI-committed digests on re-runs).
 "$HERE/50-gitops-repository.sh"   || die "step 50 failed"
 "$HERE/55-library-read-token.sh" || die "step 55 failed"
+"$HERE/56-teams-read-token.sh"   || die "step 56 failed"
 
 # Webhook for the shared-library repo (matching Jenkins job is seeded Phase 6;
 # deliveries 404 harmlessly until then — documented in add-webhook.sh).
@@ -45,6 +46,7 @@ ${C_GREEN}${C_BOLD}Phase 4 complete.${C_RESET} Summary:
   groups      : platform, teams (private)
   users       : jenkins-ci (PATs: ci-api, gitops-write), argocd
   library     : project deploy token (read_repository only; scoped to shared library)
+  team clones : group deploy token (read_repository only; scoped to teams/*)
   projects    : platform/devsecops-shared-library (MR-gated, main protected, v* tags)
                 platform/gitops-repository (maintainer-push main, rel-* tags, ff merges)
   memberships : jenkins-ci → library(Reporter), gitops(Maintainer), teams(Developer)
@@ -54,8 +56,8 @@ ${C_GREEN}${C_BOLD}Phase 4 complete.${C_RESET} Summary:
 Next steps:
   1) Refresh Jenkins so JCasC loads the project-only library credential:
        docker compose -f docker-compose.yml --profile core up -d --no-deps --force-recreate jenkins
-     (secrets/gitlab-jenkins.env changed; JCasC re-applies the shared-library
-      retriever with the Global-scoped, read-only 'gitlab-library-readonly' credential)
+     (secrets/gitlab-jenkins.env changed; JCasC applies Global-scoped
+      'gitlab-library-readonly' and 'gitlab-teams-readonly' credentials)
   2) Verify: https://gitlab.${PLATFORM_DOMAIN}  (root login — secrets/gitlab.env)
   3) Application repositories get webhooks when Phase 6 seeds the multibranch
      jobs (seed job invokes add-webhook.sh per project).

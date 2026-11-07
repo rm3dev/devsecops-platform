@@ -305,8 +305,10 @@ All scripts are idempotent and use the service APIs — no clicking in UIs.
 
 What it creates: a root API token; the `platform` group; service users
 (`jenkins-ci` with least-privilege PATs, `gitops-write`); a project-scoped
-`read_repository` deploy token for the shared library (used by Jenkins through a
-Global-scoped credential; do not widen the API-capable PAT); protected
+`read_repository` deploy token for the shared library (project-scoped) and a
+separate `read_repository` deploy token for private team-app checkouts (scoped to
+`teams/*`); Jenkins stores each as a Global-scoped username/password credential
+for Git checkout, distinct from the GitLab API PAT; protected
 branches/tags; the **`platform/devsecops-shared-library`** repo (seeded from
 `jenkins/shared-library/` — this is where Jenkins loads the pipeline from) and
 the `platform/gitops-repository` skeleton; sample team repos incl. an

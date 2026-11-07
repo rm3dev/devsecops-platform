@@ -41,15 +41,15 @@ jobs:
               description('Auto-discovered multibranch pipelines for GitLab group ' + groupPath + '. Managed as code (jenkins/casc/60-jobs.yaml) — do not edit in the UI.')
 
               organizations {
-                  // DSL names verified against gitlab-branch-source 749.v63a_c68676751
-                  // source (@Symbol annotations). checkoutCredentialsId was REMOVED
-                  // upstream: the single credentialsId (a GitLabApiToken, which IS a
-                  // username/password credential) is used for API calls AND HTTP
-                  // checkout — so gitlab-jenkins-user is no longer referenced here.
+                  // The serverName selects the API/PAT configuration above; the
+                  // navigator credentialsId is the optional HTTP checkout credential
+                  // for private repositories (GitLab Branch Source docs). Keep these
+                  // separate: PATs are not Git username/password credentials. The
+                  // teams-group deploy token is read_repository-only.
                   gitLabSCMNavigator {
                       serverName('gitlab')
                       projectOwner(groupPath)
-                      credentialsId('gitlab-branch-source-token')
+                      credentialsId('gitlab-teams-readonly')
                       traits {
                           gitLabSubGroupProjectDiscovery()   // include subgroups of teams/<team>
                           gitLabBranchDiscovery {

@@ -328,6 +328,7 @@ services:
     environment:
       DEVSECOPS_AGENT_NAME: agent-python
       JENKINS_INTERNAL_URL: ${JENKINS_URL}
+      PLATFORM_DOMAIN: ${PLATFORM_DOMAIN}
       TZ: ${TZ}
     volumes:
       - ${DATA_ROOT}/agent-workspaces/agent-python:/home/jenkins/agent
