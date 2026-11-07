@@ -101,7 +101,7 @@ jobs:
                   script('''
       def branch = params.SOURCE_BRANCH?.trim()
       def sha = params.SOURCE_SHA?.trim()
-      if (!branch || !(branch ==~ /[A-Za-z0-9._\\/-]+/)) error('Invalid SOURCE_BRANCH')
+      if (!branch || !(branch ==~ /[A-Za-z0-9._-]+/)) error('Invalid SOURCE_BRANCH')
       if (!sha || !(sha ==~ /[0-9a-f]{40}/)) error('SOURCE_SHA must be 40 lowercase hex characters')
       node('general') {
           deleteDir()
