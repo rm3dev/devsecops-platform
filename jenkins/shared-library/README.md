@@ -31,7 +31,7 @@ src/org/company/devsecops/              reusable classes
   SecurityPolicy.groovy                 policy engine + exception register
   NotificationService.groovy            email/slack/teams dispatch
   PipelineLogger.groovy                 structured [devsecops][svc][stage] logs
-config/platform-config.yaml             stage flags, environments, labels
+resources/config/platform-config.yaml             stage flags, environments, labels
 resources/security-policy-default.yaml  organization security floor
 examples/                               Jenkinsfile, devsecops.yaml,
                                         security-exceptions.yaml templates
@@ -39,7 +39,7 @@ examples/                               Jenkinsfile, devsecops.yaml,
 
 ## Incremental enablement (the phase contract)
 
-Stages activate via `config/platform-config.yaml` flags — never by editing
+Stages activate via `resources/config/platform-config.yaml` flags — never by editing
 service repositories. Current status: `checkout`, `discovery`, `report` ON;
 build/test/package/image/publish flip in Phase 6, quality in Phase 5,
 security gates in Phase 7, GitOps/sync in Phase 8, verify/post-deploy in

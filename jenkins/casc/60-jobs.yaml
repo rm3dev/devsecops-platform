@@ -114,12 +114,21 @@ jobs:
               connection: gitLabConnection('gitlab'),
               builds: [[projectId: 'platform/devsecops-shared-library', revisionHash: sha]]) {
               def text = readFile('src/org/company/devsecops/PlatformConfig.groovy')
+              def policyText = readFile('src/org/company/devsecops/SecurityPolicy.groovy')
+              if (!fileExists('resources/config/platform-config.yaml') ||
+                  !fileExists('resources/security-policy-default.yaml'))
+                  error('Required shared-library resources are missing')
+              def platformYaml = readYaml(file: 'resources/config/platform-config.yaml')
+              def policyYaml = readYaml(file: 'resources/security-policy-default.yaml')
               def required = ["PlatformConfig(script, String servicePath = '.')",
                   'this.script = script', 'this.servicePath = servicePath',
-                  "new PlatformConfig(script, args.servicePath ?: '.')"]
+                  "new PlatformConfig(script, args.servicePath ?: '.')",
+                  "libraryResource('config/platform-config.yaml')"]
               if (!required.every { text.contains(it) } ||
-                  text.contains("new PlatformConfig(script: script, servicePath: args.servicePath ?: '.')"))
-                  error('PlatformConfig source validation failed')
+                  text.contains("new PlatformConfig(script: script, servicePath: args.servicePath ?: '.')") ||
+                  !policyText.contains("libraryResource('security-policy-default.yaml')") ||
+                  !(platformYaml instanceof Map) || !(policyYaml.security instanceof Map))
+                  error('Shared-library source/resource validation failed')
               echo('Validation passed; MR source was not executed')
           }
       }

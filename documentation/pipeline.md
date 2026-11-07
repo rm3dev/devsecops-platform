@@ -22,7 +22,7 @@ All behavior is configured — never coded — in:
 
 | File | Layer | Rules |
 |------|-------|-------|
-| `config/platform-config.yaml` (library) | organization | stage flags, environments, agent labels, concurrency, notification channels, security floor |
+| `resources/config/platform-config.yaml` (library) | organization | stage flags, environments, agent labels, concurrency, notification channels, security floor |
 | `devsecops.yaml` (service repo) | project | serviceName, language/buildTool hints, deploymentType, environments subset, `dependsOn`, **tighten-only** security overrides |
 | `security-exceptions.yaml` (service repo) | project | time-boxed exceptions: id, tool, owner, justification, approvedBy, expires |
 

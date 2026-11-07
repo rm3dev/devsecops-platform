@@ -604,7 +604,7 @@ independent systems — that's the trust chain.
 
 ⚠️ **If a gate blocks you:** that's the platform WORKING. Read the stage log +
 `reports/` artifact; the message names the tool, rule, and threshold.
-Policy knobs live in `jenkins/shared-library/config/platform-config.yaml`
+Policy knobs live in `jenkins/shared-library/resources/config/platform-config.yaml`
 (and per-repo `.devsecops.yaml` overrides — see `examples/`).
 
 ---
@@ -716,7 +716,7 @@ app secrets**. Compromise any one → bounded blast radius.
 |---|---|---|
 | pipeline behavior/gates | `jenkins/shared-library/` | push to its GitLab repo (Jenkins reloads per build) |
 | shared-library MR gate | `platform/shared-library-mr-validator` in Jenkins | Build with the MR source branch + exact SHA; it reports an external GitLab status without executing MR code |
-| platform defaults (flags, thresholds, envs) | `…/config/platform-config.yaml` | same push |
+| platform defaults (flags, thresholds, envs) | `…/resources/config/platform-config.yaml` | same push |
 | Jenkins system config/credentials | `jenkins/casc/*.yaml` + `secrets/*.env` | `docker compose --profile core up -d --force-recreate jenkins` (env_file is read at CREATE only) |
 | agent tooling | `jenkins/agents/<x>/Dockerfile` | `./scripts/build-images.sh --agent <x>` + recreate |
 | deployment shape (all services) | `gitops-repository/helm-charts/microservice-standard/` | render-app.sh + commit |

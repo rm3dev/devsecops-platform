@@ -384,7 +384,7 @@ jenkins/shared-library/
 │   ├── PlatformConfig.groovy  ← loads platform-config.yaml, merges per-repo overrides
 │   ├── SecurityGate.groovy    ← the policy engine: thresholds + the exception register
 │   ├── FindingGate/RegistryAuth/PipelineLogger/GitOpsRepo/KubeAccess/NotificationService…
-└── config/platform-config.yaml ← THE platform brain: stage flags, envs,
+└── resources/config/platform-config.yaml ← THE platform brain: stage flags, envs,
                                   security thresholds, gitops/verify/notify settings
 ```
 
@@ -1098,7 +1098,7 @@ Then: Grafana → Platform Overview (what's down/burning) → Platform Logs
 
 | Want to change… | Edit… | Then… |
 |---|---|---|
-| a pipeline stage / gate | `jenkins/shared-library/vars/*.groovy` + `config/platform-config.yaml` | push library (installation §12) |
+| a pipeline stage / gate | `jenkins/shared-library/vars/*.groovy` + `resources/config/platform-config.yaml` | push library (installation §12) |
 | which tools run in builds | `jenkins/agents/<x>/Dockerfile` | `./scripts/build-images.sh --agent <x>` + recreate |
 | Jenkins system config/creds | `jenkins/casc/*.yaml` + `secrets/*.env` | `docker compose --profile core up -d --force-recreate jenkins` (env_file is read at CREATE only) |
 | deployment shape of ALL services | `gitops-repository/helm-charts/microservice-standard/` | render-app + commit (the pipeline does it) |

@@ -23,7 +23,7 @@ class SecurityPolicy implements Serializable {
 
     static SecurityPolicy load(script, PlatformConfig cfg, PipelineLogger log) {
         def sp = new SecurityPolicy(script: script)
-        sp.policy = script.readYaml(text: script.libraryResource('resources/security-policy-default.yaml'))?.security ?: [:]
+        sp.policy = script.readYaml(text: script.libraryResource('security-policy-default.yaml'))?.security ?: [:]
 
         // Validated project override (tighten-only enforced upstream)
         if (cfg.project?.security) {

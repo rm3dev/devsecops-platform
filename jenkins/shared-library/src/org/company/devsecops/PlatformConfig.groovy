@@ -4,7 +4,7 @@ package org.company.devsecops
  * Layered pipeline configuration (master spec §8: "Project configuration must
  * be externalized and validated").
  *
- * Layer 1 (platform): config/platform-config.yaml from this library — the
+ * Layer 1 (platform): resources/config/platform-config.yaml from this library — the
  *         organization default. Stage flags, environments, agent labels,
  *         notification routing, concurrency.
  * Layer 2 (project):  devsecops.yaml at the repository root (or per-service
